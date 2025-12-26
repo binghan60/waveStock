@@ -8,8 +8,7 @@
   "functions": {
     "server/index.js": {
       "memory": 1024,
-      "maxDuration": 60,
-      "includeFiles": "server/tess_bin/**"
+      "maxDuration": 60
     }
   }
 }
