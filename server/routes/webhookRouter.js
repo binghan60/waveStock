@@ -79,48 +79,52 @@ async function handleJoinEvent(event, groupId, client) {
 // ---------------------------------------------------------
 async function handleImageMessage(event, client) {
   try {
-    // 1. 取得圖片串流 (Stream)
+    // 1. 取得圖片串流
     const stream = await client.getMessageContent(event.message.id)
-
-    // 2. 轉為 Buffer
     const imageBuffer = await streamToBuffer(stream)
 
-    // 3. 圖片前處理
+    // 2. 圖片前處理
     const processedBuffer = await preprocessImage(imageBuffer)
 
-    console.log('⏳ OCR 引擎啟動中 (使用 CDN)...')
+    console.log('⏳ OCR 引擎啟動中 (Vercel Mode)...');
 
-    // 4. Tesseract OCR 辨識
-    // 關鍵修改：加入 corePath 與 workerPath，指向 CDN
-    const {
-      data: { text },
-    } = await Tesseract.recognize(processedBuffer, 'chi_tra+eng', {
-      // 👇 這兩行是關鍵！強制從網路載入 WebAssembly 核心，避開 Serverless 找不到檔案的問題
-      corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0/tesseract-core.wasm.js',
-      workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/worker.min.js',
+    // 3. Tesseract OCR 辨識 (Vercel 專用設定)
+    const { data: { text } } = await Tesseract.recognize(
+      processedBuffer,
+      'chi_tra+eng', 
+      { 
+        // 👇 [關鍵 1] 核心 WASM 檔：指向 CDN
+        // 這解決了 "ENOENT ... .wasm" 找不到檔案的問題
+        corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0/tesseract-core.wasm.js',
 
-      logger: (m) => {
-        // 只顯示整數進度，減少 Log 垃圾
-        if (m.status === 'recognizing text' && (m.progress * 100) % 20 === 0) {
-          console.log(`OCR Progress: ${(m.progress * 100).toFixed(0)}%`)
+        // 👇 [關鍵 2] 移除 workerPath 設定
+        // 讓 Node.js 自動去 node_modules 找本地 worker，解決 "ERR_WORKER_PATH" 錯誤
+        
+        // 👇 [關鍵 3] 設定快取與日誌路徑為 /tmp
+        // Vercel 只有 /tmp 可寫入，不設這個會因為無法下載語言包而報錯
+        cachePath: '/tmp',
+        
+        logger: m => {
+          if (m.status === 'recognizing text' && (m.progress * 100) % 20 === 0) {
+            console.log(`OCR Progress: ${(m.progress * 100).toFixed(0)}%`)
+          }
         }
-      },
-    })
+      }
+    )
 
-    console.log('📜 [OCR 原始結果]:', text.replace(/\n/g, ' '))
+    console.log('📜 [OCR 原始結果]:', text.replace(/\n/g, ' ')) 
 
-    // 5. 解析資料
+    // 4. 解析資料
     const stockData = parseStockData(text)
 
-    // 6. 檢查關鍵資料
+    // (後面邏輯不變...)
     if (!stockData.code) {
-      return client.replyMessage(event.replyToken, {
-        type: 'text',
-        text: '⚠️ 辨識失敗：找不到股票代號，請確認圖片清晰度。',
-      })
+        return client.replyMessage(event.replyToken, {
+            type: 'text',
+            text: '⚠️ 辨識失敗：找不到股票代號，請確認圖片清晰度。'
+        })
     }
 
-    // 7. 回覆訊息
     const replyText = `📊 分析結果
 ──────────────
 🎫 代號：${stockData.code}
@@ -132,15 +136,15 @@ async function handleImageMessage(event, client) {
 (此為自動辨識結果，僅供參考)`
 
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText })
+
   } catch (error) {
     console.error('❌ OCR Error:', error)
-    return client.replyMessage(event.replyToken, {
-      type: 'text',
-      text: '圖片辨識發生錯誤，請稍後再試。',
+    return client.replyMessage(event.replyToken, { 
+        type: 'text', 
+        text: '圖片辨識發生錯誤，請稍後再試。' 
     })
   }
 }
-
 // [工具] 圖片前處理 (Sharp)
 async function preprocessImage(buffer) {
   return sharp(buffer)
