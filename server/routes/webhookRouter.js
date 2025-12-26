@@ -1,6 +1,8 @@
 import * as line from '@line/bot-sdk'
 import express from 'express'
 import 'dotenv/config'
+import Tesseract from 'tesseract.js' // 新增: 引入 OCR
+import sharp from 'sharp'            // 新增: 引入圖片處理
 
 export default (config) => {
   const router = express.Router()
@@ -12,8 +14,7 @@ export default (config) => {
       const results = await Promise.all(events.map((event) => handleEvent(event, client)))
       res.json(results)
     } catch (err) {
-      console.error(err)
-      await sendErrorEmail('🤖 LINE BOT 崩潰了！', err)
+      console.error('Webhook Error:', err)
       res.status(500).end()
     }
   })
@@ -21,6 +22,7 @@ export default (config) => {
   return router
 }
 
+// 事件分發器
 async function handleEvent(event, client) {
   const sourceType = event.source.type
   let groupId
@@ -33,137 +35,162 @@ async function handleEvent(event, client) {
     groupId = event.source.roomId
   }
 
+  // 1. 文字訊息處理
   if (event.type === 'message' && event.message.type === 'text') {
     return handleTextMessage(event, groupId, client)
   }
 
+  // 2. 圖片訊息處理 (新增功能)
+  if (event.type === 'message' && event.message.type === 'image') {
+    return handleImageMessage(event, client)
+  }
+
+  // 3. 加入/追蹤事件處理
   if (event.type === 'join' || event.type === 'follow') {
     return handleJoinEvent(event, groupId, client)
-  }
-  if (event.type === 'message' && event.message.type === 'image') {
-    return handleImageMessage(event, client) // 呼叫圖片處理函式
   }
 
   return Promise.resolve(null)
 }
 
+// 文字訊息邏輯
 async function handleTextMessage(event, groupId, client) {
   const msg = event.message.text.trim()
-
+  
+  // 這裡可以加入其他文字指令邏輯
   await client.replyMessage(event.replyToken, {
     type: 'text',
-    text: msg,
+    text: msg, // 目前設定為回聲機器人 (Echo)
   })
   return Promise.resolve(null)
 }
 
-// 加入 群組 或 好友時
+// 歡迎訊息邏輯
 async function handleJoinEvent(event, groupId, client) {
-  const welcomeMessage = `🎉 歡迎使用！`
-
+  const welcomeMessage = `🎉 歡迎使用！請傳送股票分析圖給我，我會幫您辨識資訊。`
   return client.replyMessage(event.replyToken, {
     type: 'text',
     text: welcomeMessage,
   })
 }
 
-
+// ---------------------------------------------------------
+// 👇 核心功能：圖片辨識邏輯 (已整合測試成功的參數)
+// ---------------------------------------------------------
 async function handleImageMessage(event, client) {
   try {
-    // 1. 取得圖片 (Stream)
-    const stream = await client.getMessageContent(event.message.id);
+    // 1. 取得圖片串流 (Stream)
+    const stream = await client.getMessageContent(event.message.id)
     
     // 2. 轉為 Buffer
-    const imageBuffer = await streamToBuffer(stream);
+    const imageBuffer = await streamToBuffer(stream)
 
-    // 3. 圖片前處理 (關鍵步驟：轉灰階、提高對比，讓 OCR 更準)
-    // 如果圖片格式非常固定，甚至可以在這裡裁切(crop)出特定區域再來辨識，速度會更快
-    const processedBuffer = await preprocessImage(imageBuffer);
+    // 3. 圖片前處理 (使用測試成功的 Width 1500 / Threshold 160)
+    const processedBuffer = await preprocessImage(imageBuffer)
 
-    // 4. 使用 Tesseract.js 進行辨識
-    // 第一次執行會自動下載語言包，會比較慢，之後就會很快
+    // 4. Tesseract OCR 辨識
+    // 注意：部署到 Server 上時，第一次執行會下載語言包，可能會稍微久一點
     const { data: { text } } = await Tesseract.recognize(
       processedBuffer,
-      'chi_tra+eng', // 使用繁體中文 + 英文
+      'chi_tra+eng', // 繁體中文 + 英文
       { 
-        logger: m => console.log(m) // 可以在 console 看到進度
+        // 在 Server logs 顯示進度，方便除錯
+        logger: m => {
+          if (m.status === 'recognizing text' && (m.progress * 100) % 20 === 0) {
+            console.log(`OCR Progress: ${(m.progress * 100).toFixed(0)}%`)
+          }
+        }
       }
-    );
+    )
 
-    console.log('辨識出的原始文字:', text); // 除錯用，看看抓到了什麼
+    console.log('📜 [OCR 原始結果]:', text.replace(/\n/g, ' ')) 
 
-    // 5. 解析資料
-    const stockData = parseStockData(text);
+    // 5. 解析資料 (使用強效容錯版 Regex)
+    const stockData = parseStockData(text)
 
-    // 6. 回覆訊息
-    const replyText = `📊 分析結果 (本地 OCR)：
-----------------
-🎫 代號：${stockData.code || '未偵測到'}
-🛡️ 支撐：${stockData.support || '未偵測到'}
-💰 短停：${stockData.shortTermProfit || '未偵測到'}
-🌊 波段：${stockData.waveProfit || '未偵測到'}
-🔄 換股：${stockData.swapRef || '未偵測到'}
-----------------`;
+    // 6. 檢查關鍵資料是否存在
+    if (!stockData.code) {
+        return client.replyMessage(event.replyToken, {
+            type: 'text',
+            text: '⚠️ 辨識失敗：找不到股票代號，請確認圖片清晰度。'
+        })
+    }
 
-    return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
+    // 7. 組裝回覆訊息
+    const replyText = `📊 分析結果
+──────────────
+🎫 代號：${stockData.code}
+🛡️ 支撐：${stockData.support || '無資料'}
+💰 短線：${stockData.shortTermProfit || '無資料'}
+🌊 波段：${stockData.waveProfit || '無資料'}
+🔄 換股：${stockData.swapRef || '無資料'}
+──────────────
+(此為自動辨識結果，僅供參考)`
+
+    return client.replyMessage(event.replyToken, { type: 'text', text: replyText })
 
   } catch (error) {
-    console.error('OCR Error:', error);
-    return client.replyMessage(event.replyToken, { type: 'text', text: '圖片辨識失敗，請確認圖片清晰度。' });
+    console.error('❌ OCR Error:', error)
+    return client.replyMessage(event.replyToken, { 
+        type: 'text', 
+        text: '圖片辨識發生錯誤，請稍後再試。' 
+    })
   }
 }
 
-// [工具] 圖片前處理 (使用 Sharp)
+// [工具] 圖片前處理 (Sharp)
 async function preprocessImage(buffer) {
   return sharp(buffer)
-    .resize({ width: 1000 }) // 放大圖片通常有助於辨識文字
+    .resize({ width: 1500 }) // 放大至 1500px (測試驗證過較佳)
     .grayscale()             // 轉灰階
-    .normalize()             // 增加對比度
-    .threshold(180)          // 二值化：將圖片變成只有全黑和全白 (數值0-255可微調)
-    .toBuffer();
+    .normalize()             // 拉高對比
+    .threshold(160)          // 二值化 (測試驗證過較佳)
+    .toBuffer()
 }
 
-// [工具] 文字解析 (針對你的需求調整 Regex)
+// [工具] 文字解析 (強效容錯版 Regex)
 function parseStockData(text) {
-  // 移除多餘空白與換行，變成一行字串方便處理
-  // 這裡需要根據實際 Tesseract 吐出的亂度做調整
-  const cleanText = text.replace(/\s+/g, ' '); 
+  // 1. 預先修正常見 OCR 錯誤 (例如 l->1, O->0)
+  let cleanText = text
+    .replace(/\s+/g, ' ')
+    .replace(/O/g, '0')
+    .replace(/o/g, '0')
+    .replace(/l/g, '1')
+    .replace(/I/g, '1')
 
-  const result = {};
+  const result = {}
 
-  // 1. 股票代號 (抓取 4 個連續數字)
-  const codeMatch = cleanText.match(/(\d{4})/);
-  if (codeMatch) result.code = codeMatch[1];
+  // 1. 股票代號
+  const codeMatch = cleanText.match(/(\d{4})/)
+  if (codeMatch) result.code = codeMatch[1]
 
-  // 2. 數值解析邏輯
-  // Tesseract 有時會把「支撐區間」辨識成「支撐區問」或類似字，Regex 要寫寬鬆一點
+  // 2. 數值解析 (容錯寫法)
   
-  // 支撐區間 (抓取關鍵字後的數字範圍，例如 120-130 或 120.5)
-  // [^\d]* 表示中間可能夾雜冒號、空格或辨識錯誤的符號
-  const supportMatch = cleanText.match(/支撐[^0-9]*([\d\.\-~]+)/);
-  if (supportMatch) result.support = supportMatch[1];
+  // 支撐區間
+  const supportMatch = cleanText.match(/支[^0-9\n]*([\d\.\-~]+)/)
+  if (supportMatch) result.support = supportMatch[1]
 
-  // 短期停利
-  const shortMatch = cleanText.match(/短期[^0-9]*([\d\.]+)/);
-  if (shortMatch) result.shortTermProfit = shortMatch[1];
+  // 短期停利 / 短線 (關鍵修正：同時支援 "短期" 與 "短線"，並容錯 "矩")
+  const shortMatch = cleanText.match(/[短矩][^0-9\n]*([\d\.]+)/)
+  if (shortMatch) result.shortTermProfit = shortMatch[1]
 
   // 波段停利
-  const waveMatch = cleanText.match(/波段[^0-9]*([\d\.]+)/);
-  if (waveMatch) result.waveProfit = waveMatch[1];
+  const waveMatch = cleanText.match(/波[^0-9\n]*([\d\.]+)/)
+  if (waveMatch) result.waveProfit = waveMatch[1]
 
-  // 換股參考
-  const swapMatch = cleanText.match(/換股[^0-9]*([\d\.]+)/);
-  if (swapMatch) result.swapRef = swapMatch[1];
+  // 換股參考 (容錯 "挽", "换")
+  const swapMatch = cleanText.match(/[換挽换][^0-9\n]*([\d\.]+)/)
+  if (swapMatch) result.swapRef = swapMatch[1]
 
-  return result;
+  return result
 }
 
 // [工具] Stream 轉 Buffer
 function streamToBuffer(stream) {
   return new Promise((resolve, reject) => {
-    const chunks = [];
-    stream.on('data', (chunk) => chunks.push(chunk));
-    stream.on('error', reject);
-    stream.on('end', () => resolve(Buffer.concat(chunks)));
-  });
+    const chunks = []
+    stream.on('data', (chunk) => chunks.push(chunk))
+    stream.on('error', reject)
+    stream.on('end', () => resolve(Buffer.concat(chunks)))
+  })
 }
