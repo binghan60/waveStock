@@ -5,7 +5,7 @@ import axios from 'axios' // 新增: 用來打 API
 import FormData from 'form-data' // 新增: 用來包裝圖片
 
 // 填入你的 OCR.space API Key
-const OCR_API_KEY = '你的_OCR_SPACE_API_KEY' // 建議申請一個，或暫時用 'helloworld'
+const OCR_API_KEY = process.env.OCR_API_KEY // 建議申請一個，或暫時用 'helloworld'
 
 export default (config) => {
   const router = express.Router()
