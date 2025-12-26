@@ -106,58 +106,78 @@ async function handleImageMessage(event, client) {
   }
 }
 
-// 👇 [關鍵修正] 掃描式解析邏輯 (比 Regex 更聰明)
 function parseStockData(text) {
-  // 1. 先把文字依照 "換行" 切割成陣列
-  // Engine 2 通常會把標題跟數值放在同一行，或是緊接的下一行
-  const lines = text
+  // 1. 基本清理：移除空白、修正錯字
+  const cleanText = text.replace(/O/g, '0').replace(/o/g, '0').replace(/l/g, '1').replace(/I/g, '1').replace(/\s+/g, '\n') // 把所有空白變成換行，確保分行正確
+
+  // 將文字轉成陣列，移除空行
+  const lines = cleanText
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l)
 
   const result = {}
 
-  // 1. 全域搜尋股票代號 (這最簡單)
+  // --- 1. 抓股票代號 (全域搜尋) ---
   const codeMatch = text.match(/(\d{4})/)
   if (codeMatch) result.code = codeMatch[1]
 
-  // 定義要抓取的欄位關鍵字
-  const targets = [
-    { key: 'support', keywords: ['支撐', '支撑'], isRange: true }, // isRange: 可能有 "-" 或 "~"
-    { key: 'shortTermProfit', keywords: ['短線', '短期', '短太', '短矩'], isRange: false },
-    { key: 'waveProfit', keywords: ['波段'], isRange: false },
-    { key: 'swapRef', keywords: ['換股', '換殻', '换股'], isRange: false },
-  ]
+  // --- 2. 抓取數值 (雙欄排版策略) ---
 
-  // 2. 逐行掃描
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
+  // 我們知道圖片的順序是固定的：支撐 -> 短線 -> 波段 -> 換股
+  // 而 OCR 讀出來的順序是：[所有標題] -> [換股參考] -> [數值1] -> [數值2] -> [數值3] -> [數值4]
 
-    // 檢查這一行有沒有包含我們的關鍵字
-    targets.forEach((target) => {
-      // 如果已經抓到了就跳過
-      if (result[target.key]) return
+  // 步驟 A: 找到「換股參考」這一行在哪裡
+  // 關鍵字包含：換股、換殻、换股
+  const lastLabelIndex = lines.findIndex((l) => /[換换挽]股/.test(l))
 
-      // 檢查關鍵字是否存在於這一行
-      if (target.keywords.some((k) => line.includes(k))) {
-        // 策略 A: 數字就在同一行 (例如: "支撐 120-130")
-        let value = extractNumber(line, target.isRange)
+  if (lastLabelIndex !== -1) {
+    // 步驟 B: 從「換股參考」的下一行開始，抓出接著出現的 4 個數字
+    const foundNumbers = []
 
-        // 策略 B: 數字在下一行 (例如: "支撐" (換行) "120")
-        if (!value && i + 1 < lines.length) {
-          value = extractNumber(lines[i + 1], target.isRange)
-        }
+    for (let i = lastLabelIndex + 1; i < lines.length; i++) {
+      const line = lines[i]
 
-        if (value) {
-          result[target.key] = value
-        }
+      // 檢查是否為純數字 (例如 "177", "210.5")，排除日期 ("2025/...")
+      // Regex 解釋: ^ 開始, \d+ 數字, (\.\d+)? 小數點可有可無, $ 結束
+      if (/^\d+(\.\d+)?$/.test(line)) {
+        foundNumbers.push(line)
       }
-    })
+
+      // 如果已經抓到 4 個數字，就停止掃描
+      if (foundNumbers.length >= 4) break
+    }
+
+    // 步驟 C: 依序填入 (因為我們知道順序是固定的)
+    if (foundNumbers.length >= 4) {
+      result.support = foundNumbers[0] // 177
+      result.shortTermProfit = foundNumbers[1] // 210
+      result.waveProfit = foundNumbers[2] // 244
+      result.swapRef = foundNumbers[3] // 171
+
+      return result // 成功抓取，直接回傳
+    }
   }
+
+  // --- 3. (備用方案) 如果上面的方法失敗，嘗試舊的「逐行抓取」邏輯 ---
+  // 這預防萬一 OCR 讀取順序變回「標題:數值」的形式
+  console.log('⚠️ 雙欄模式未命中，嘗試備用邏輯...')
+
+  // (這裡保留簡單的備用 regex，以防萬一)
+  const supportMatch = text.match(/支[^0-9\n]*(\d+(?:\.\d+)?)/)
+  if (supportMatch) result.support = supportMatch[1]
+
+  const shortMatch = text.match(/[短矩][^0-9\n]*(\d+(?:\.\d+)?)/)
+  if (shortMatch) result.shortTermProfit = shortMatch[1]
+
+  const waveMatch = text.match(/波[^0-9\n]*(\d+(?:\.\d+)?)/)
+  if (waveMatch) result.waveProfit = waveMatch[1]
+
+  const swapMatch = text.match(/[換挽换][^0-9\n]*(\d+(?:\.\d+)?)/)
+  if (swapMatch) result.swapRef = swapMatch[1]
 
   return result
 }
-
 // [工具] 從字串中提取數字或範圍
 function extractNumber(str, isRange) {
   // 1. 移除干擾字元 (把 O 變 0, l 變 1, 移除空白)
