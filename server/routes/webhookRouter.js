@@ -2,7 +2,7 @@ import * as line from '@line/bot-sdk'
 import express from 'express'
 import 'dotenv/config'
 import Tesseract from 'tesseract.js' // 新增: 引入 OCR
-import sharp from 'sharp'            // 新增: 引入圖片處理
+import sharp from 'sharp' // 新增: 引入圖片處理
 
 export default (config) => {
   const router = express.Router()
@@ -56,7 +56,7 @@ async function handleEvent(event, client) {
 // 文字訊息邏輯
 async function handleTextMessage(event, groupId, client) {
   const msg = event.message.text.trim()
-  
+
   // 這裡可以加入其他文字指令邏輯
   await client.replyMessage(event.replyToken, {
     type: 'text',
@@ -81,42 +81,46 @@ async function handleImageMessage(event, client) {
   try {
     // 1. 取得圖片串流 (Stream)
     const stream = await client.getMessageContent(event.message.id)
-    
+
     // 2. 轉為 Buffer
     const imageBuffer = await streamToBuffer(stream)
 
-    // 3. 圖片前處理 (使用測試成功的 Width 1500 / Threshold 160)
+    // 3. 圖片前處理
     const processedBuffer = await preprocessImage(imageBuffer)
 
+    console.log('⏳ OCR 引擎啟動中 (使用 CDN)...')
+
     // 4. Tesseract OCR 辨識
-    // 注意：部署到 Server 上時，第一次執行會下載語言包，可能會稍微久一點
-    const { data: { text } } = await Tesseract.recognize(
-      processedBuffer,
-      'chi_tra+eng', // 繁體中文 + 英文
-      { 
-        // 在 Server logs 顯示進度，方便除錯
-        logger: m => {
-          if (m.status === 'recognizing text' && (m.progress * 100) % 20 === 0) {
-            console.log(`OCR Progress: ${(m.progress * 100).toFixed(0)}%`)
-          }
+    // 關鍵修改：加入 corePath 與 workerPath，指向 CDN
+    const {
+      data: { text },
+    } = await Tesseract.recognize(processedBuffer, 'chi_tra+eng', {
+      // 👇 這兩行是關鍵！強制從網路載入 WebAssembly 核心，避開 Serverless 找不到檔案的問題
+      corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0/tesseract-core.wasm.js',
+      workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/worker.min.js',
+
+      logger: (m) => {
+        // 只顯示整數進度，減少 Log 垃圾
+        if (m.status === 'recognizing text' && (m.progress * 100) % 20 === 0) {
+          console.log(`OCR Progress: ${(m.progress * 100).toFixed(0)}%`)
         }
-      }
-    )
+      },
+    })
 
-    console.log('📜 [OCR 原始結果]:', text.replace(/\n/g, ' ')) 
+    console.log('📜 [OCR 原始結果]:', text.replace(/\n/g, ' '))
 
-    // 5. 解析資料 (使用強效容錯版 Regex)
+    // 5. 解析資料
     const stockData = parseStockData(text)
 
-    // 6. 檢查關鍵資料是否存在
+    // 6. 檢查關鍵資料
     if (!stockData.code) {
-        return client.replyMessage(event.replyToken, {
-            type: 'text',
-            text: '⚠️ 辨識失敗：找不到股票代號，請確認圖片清晰度。'
-        })
+      return client.replyMessage(event.replyToken, {
+        type: 'text',
+        text: '⚠️ 辨識失敗：找不到股票代號，請確認圖片清晰度。',
+      })
     }
 
-    // 7. 組裝回覆訊息
+    // 7. 回覆訊息
     const replyText = `📊 分析結果
 ──────────────
 🎫 代號：${stockData.code}
@@ -128,12 +132,11 @@ async function handleImageMessage(event, client) {
 (此為自動辨識結果，僅供參考)`
 
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText })
-
   } catch (error) {
     console.error('❌ OCR Error:', error)
-    return client.replyMessage(event.replyToken, { 
-        type: 'text', 
-        text: '圖片辨識發生錯誤，請稍後再試。' 
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: '圖片辨識發生錯誤，請稍後再試。',
     })
   }
 }
@@ -142,21 +145,16 @@ async function handleImageMessage(event, client) {
 async function preprocessImage(buffer) {
   return sharp(buffer)
     .resize({ width: 1500 }) // 放大至 1500px (測試驗證過較佳)
-    .grayscale()             // 轉灰階
-    .normalize()             // 拉高對比
-    .threshold(160)          // 二值化 (測試驗證過較佳)
+    .grayscale() // 轉灰階
+    .normalize() // 拉高對比
+    .threshold(160) // 二值化 (測試驗證過較佳)
     .toBuffer()
 }
 
 // [工具] 文字解析 (強效容錯版 Regex)
 function parseStockData(text) {
   // 1. 預先修正常見 OCR 錯誤 (例如 l->1, O->0)
-  let cleanText = text
-    .replace(/\s+/g, ' ')
-    .replace(/O/g, '0')
-    .replace(/o/g, '0')
-    .replace(/l/g, '1')
-    .replace(/I/g, '1')
+  let cleanText = text.replace(/\s+/g, ' ').replace(/O/g, '0').replace(/o/g, '0').replace(/l/g, '1').replace(/I/g, '1')
 
   const result = {}
 
@@ -165,7 +163,7 @@ function parseStockData(text) {
   if (codeMatch) result.code = codeMatch[1]
 
   // 2. 數值解析 (容錯寫法)
-  
+
   // 支撐區間
   const supportMatch = cleanText.match(/支[^0-9\n]*([\d\.\-~]+)/)
   if (supportMatch) result.support = supportMatch[1]
