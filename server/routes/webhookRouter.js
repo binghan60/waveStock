@@ -38,7 +38,7 @@ async function handleEvent(event, client) {
   return Promise.resolve(null)
 }
 
-// 👇👇👇 v7.0.0 專用寫法 👇👇👇
+// 👇👇👇 修正重點 👇👇👇
 async function handleImageMessage(event, client) {
   let worker = null
   try {
@@ -49,20 +49,19 @@ async function handleImageMessage(event, client) {
     console.log('🔧 圖片前處理...')
     const processedBuffer = await preprocessImage(imageBuffer)
 
-    console.log('⏳ 初始化 OCR Worker (v7.0.0 CDN Mode)...')
+    console.log('⏳ 初始化 OCR Worker (Local Script + CDN Core)...')
 
-    // [關鍵修正] 使用 createWorker (語言, OEM模式, 設定參數)
-    // v7.0.0 的參數順序是 createWorker(languages, oem, options)
+    // [修正] 不設定 workerPath，讓它自己去 node_modules 找 (解決 ERR_WORKER_PATH)
+    // 只設定 corePath，解決 WASM 找不到的問題 (解決 ENOENT)
     worker = await Tesseract.createWorker('chi_tra+eng', 1, {
       
-      // 1. [Worker] 強制使用 v7.0.0 的 Worker CDN
-      workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/worker.min.js',
+      // 1. [關鍵] 不要設定 workerPath！讓它使用本地安裝的腳本
       
-      // 2. [Core] 強制使用 v5.1.0 的 Core WASM CDN (目前 v7 仍依賴此核心版本)
-      // 這行救命關鍵！它讓程式不要去硬碟找 .wasm 檔
+      // 2. [關鍵] 核心 WASM 強制走 CDN
+      // 這會讓本地的 Worker 去網路上抓 WASM，而不是去讀硬碟
       corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0/tesseract-core.wasm.js',
       
-      // 3. [Cache] 語言包快取路徑 (Vercel 唯一可寫入的地方)
+      // 3. [關鍵] 快取路徑 (Vercel 唯一可寫)
       cachePath: '/tmp',
 
       logger: m => {
@@ -74,7 +73,6 @@ async function handleImageMessage(event, client) {
 
     console.log('🚀 開始辨識...');
     
-    // v7.0.0 中 recognize 只需要傳入圖片
     const { data: { text } } = await worker.recognize(processedBuffer);
     
     console.log('✅ 辨識完成');
@@ -107,7 +105,6 @@ async function handleImageMessage(event, client) {
       text: '系統忙碌中，請稍後再試。' 
     })
   } finally {
-    // 記得關閉 Worker
     if (worker) {
       await worker.terminate(); 
     }
@@ -116,7 +113,7 @@ async function handleImageMessage(event, client) {
 
 async function preprocessImage(buffer) {
   return sharp(buffer)
-    .resize({ width: 1000 }) // 保持 1000 避免 Vercel Timeout
+    .resize({ width: 1000 })
     .grayscale()
     .normalize()
     .threshold(160)
