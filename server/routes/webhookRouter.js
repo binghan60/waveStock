@@ -4,6 +4,7 @@ import 'dotenv/config'
 import axios from 'axios'
 import FormData from 'form-data'
 import sharp from 'sharp' // 記得要留著 sharp 用來壓縮
+import RecognizedStock from '../models/RecognizedStock.js'
 
 // 如果你還沒申請 Key，暫時用 'helloworld' (這是官方測試 Key，但不保證穩定)
 // 強烈建議去 https://ocr.space/ocrapi 申請一個 (免費且只需填 Email)
@@ -90,6 +91,47 @@ async function handleImageMessage(event, client) {
       return client.replyMessage(event.replyToken, { type: 'text', text: '⚠️ 辨識失敗：找不到股票代號' })
     }
 
+    // 💾 儲存到資料庫
+    try {
+      const thirtyDaysAgo = new Date()
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+
+      // 查詢 30 天內是否已經有相同的股票代號
+      const existingStock = await RecognizedStock.findOne({
+        code: stockData.code,
+        createdAt: { $gte: thirtyDaysAgo }
+      }).sort({ createdAt: -1 })
+
+      if (existingStock) {
+        // 30 天內已經有這支股票，更新資料和日期
+        existingStock.support = stockData.support
+        existingStock.shortTermProfit = stockData.shortTermProfit
+        existingStock.waveProfit = stockData.waveProfit
+        existingStock.swapRef = stockData.swapRef
+        existingStock.createdAt = new Date() // 更新追蹤日期
+        
+        await existingStock.save()
+        console.log('✅ 股票資料已更新（延長追蹤期限）:', stockData.code)
+      } else {
+        // 超過 30 天或沒有該股票，新增一筆
+        const recognizedStock = new RecognizedStock({
+          code: stockData.code,
+          support: stockData.support,
+          shortTermProfit: stockData.shortTermProfit,
+          waveProfit: stockData.waveProfit,
+          swapRef: stockData.swapRef,
+          source: 'system',
+          isFavorite: false,
+        })
+        
+        await recognizedStock.save()
+        console.log('✅ 股票資料已新增到資料庫:', stockData.code)
+      }
+    } catch (dbError) {
+      console.error('❌ 資料庫儲存失敗:', dbError.message)
+      // 即使儲存失敗，仍然回覆使用者辨識結果
+    }
+
     const replyText = `📊 分析結果
 ──────────────
 🎫 代號：${stockData.code}
@@ -124,36 +166,34 @@ function parseStockData(text) {
 
   // --- 2. 抓取數值 (雙欄排版策略) ---
 
-  // 我們知道圖片的順序是固定的：支撐 -> 短線 -> 波段 -> 換股
-  // 而 OCR 讀出來的順序是：[所有標題] -> [換股參考] -> [數值1] -> [數值2] -> [數值3] -> [數值4]
+  // 我們知道圖片的順序是固定的：支撐區間 -> 短線停利 -> 波段停利 -> 換股參考
+  
+  // 步驟 A: 找到「支撐區間」或「支撐」這一行在哪裡
+  const supportLabelIndex = lines.findIndex((l) => /支撐/.test(l))
 
-  // 步驟 A: 找到「換股參考」這一行在哪裡
-  // 關鍵字包含：換股、換殻、换股
-  const lastLabelIndex = lines.findIndex((l) => /[換换挽]股/.test(l))
+  if (supportLabelIndex !== -1) {
+    // 步驟 B: 從「支撐」的下一行開始，依序抓取數值
+    const foundValues = []
 
-  if (lastLabelIndex !== -1) {
-    // 步驟 B: 從「換股參考」的下一行開始，抓出接著出現的 4 個數字
-    const foundNumbers = []
-
-    for (let i = lastLabelIndex + 1; i < lines.length; i++) {
+    for (let i = supportLabelIndex + 1; i < lines.length; i++) {
       const line = lines[i]
 
-      // 檢查是否為純數字 (例如 "177", "210.5")，排除日期 ("2025/...")
-      // Regex 解釋: ^ 開始, \d+ 數字, (\.\d+)? 小數點可有可無, $ 結束
-      if (/^\d+(\.\d+)?$/.test(line)) {
-        foundNumbers.push(line)
+      // 檢查是否為數字或範圍 (例如 "177", "210.5", "245-250")
+      // 排除日期 ("2025/...")
+      if (/^\d+(\.\d+)?(-\d+(\.\d+)?)?$/.test(line) && !/\//.test(line)) {
+        foundValues.push(line)
       }
 
-      // 如果已經抓到 4 個數字，就停止掃描
-      if (foundNumbers.length >= 4) break
+      // 如果已經抓到 4 個值，就停止掃描
+      if (foundValues.length >= 4) break
     }
 
-    // 步驟 C: 依序填入 (因為我們知道順序是固定的)
-    if (foundNumbers.length >= 4) {
-      result.support = foundNumbers[0] // 177
-      result.shortTermProfit = foundNumbers[1] // 210
-      result.waveProfit = foundNumbers[2] // 244
-      result.swapRef = foundNumbers[3] // 171
+    // 步驟 C: 依序填入 (順序：支撐區間 -> 短線 -> 波段 -> 換股)
+    if (foundValues.length >= 4) {
+      result.support = foundValues[0] // 可能是 "177" 或 "245-250"
+      result.shortTermProfit = foundValues[1] // 309
+      result.waveProfit = foundValues[2] // 396
+      result.swapRef = foundValues[3] // 230
 
       return result // 成功抓取，直接回傳
     }
@@ -164,7 +204,8 @@ function parseStockData(text) {
   console.log('⚠️ 雙欄模式未命中，嘗試備用邏輯...')
 
   // (這裡保留簡單的備用 regex，以防萬一)
-  const supportMatch = text.match(/支[^0-9\n]*(\d+(?:\.\d+)?)/)
+  // 支撐可能是範圍 (例如 245-250)
+  const supportMatch = text.match(/支[^0-9\n]*(\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?)/)
   if (supportMatch) result.support = supportMatch[1]
 
   const shortMatch = text.match(/[短矩][^0-9\n]*(\d+(?:\.\d+)?)/)

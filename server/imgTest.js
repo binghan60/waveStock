@@ -68,22 +68,23 @@ async function preprocessImage(buffer) {
 }
 
 function parseStockData(text) {
-  const cleanText = text.replace(/\s+/g, ' ')
+  const cleanText = text.replace(/\\s+/g, ' ')
   const result = {}
 
-  const codeMatch = cleanText.match(/(\d{4})/)
+  const codeMatch = cleanText.match(/(\\d{4})/)
   if (codeMatch) result.code = codeMatch[1]
 
-  const supportMatch = cleanText.match(/支撐[^0-9]*([\d\.\-~]+)/)
+  // 支撐可能是範圍 (例如 245-250 或 245~250)
+  const supportMatch = cleanText.match(/支撐[^0-9]*([\\d\\.]+(?:[-~][\\d\\.]+)?)/)
   if (supportMatch) result.support = supportMatch[1]
 
-  const shortMatch = cleanText.match(/短線[^0-9]*([\d\.]+)/)
+  const shortMatch = cleanText.match(/短線[^0-9]*([\\d\\.]+)/)
   if (shortMatch) result.shortTermProfit = shortMatch[1]
 
-  const waveMatch = cleanText.match(/波段[^0-9]*([\d\.]+)/)
+  const waveMatch = cleanText.match(/波段[^0-9]*([\\d\\.]+)/)
   if (waveMatch) result.waveProfit = waveMatch[1]
 
-  const swapMatch = cleanText.match(/[換挽换][^0-9\n]*([\d\.]+)/)
+  const swapMatch = cleanText.match(/[換挽换][^0-9\\n]*([\\d\\.]+)/)
   if (swapMatch) result.swapRef = swapMatch[1]
   
   return result

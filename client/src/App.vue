@@ -1,13 +1,13 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
-// 引入你剛剛做好的卡片組件
 import StockCard from './components/StockCard.vue'
+import RecognizedStockCard from './components/RecognizedStockCard.vue'
 
-// ⚠️ 請確認你的後端 Port 是 3000 還是 3001 (依照你 server 的設定)
-const API_URL = 'http://localhost:3001/api'
-
+// API 配置
+const API_URL = import.meta.env.VITE_API_PATH
 const stocks = ref([])
+const recognizedStocks = ref([])
 const inputSymbol = ref('')
 const isLoading = ref(false)
 const lastUpdated = ref('')
@@ -16,12 +16,6 @@ let timer = null
 
 // --- Computed: 自動分類邏輯 ---
 
-// 1. 機器人/API 自動抓取的 (type === 'auto')
-const autoStocks = computed(() => {
-  return stocks.value.filter((item) => item.type === 'auto')
-})
-
-// 2. 使用者手動新增的 (type === 'manual' 或 舊資料無 type)
 const manualStocks = computed(() => {
   return stocks.value.filter((item) => item.type === 'manual' || !item.type)
 })
@@ -31,55 +25,106 @@ const manualStocks = computed(() => {
 const fetchData = async () => {
   try {
     const res = await axios.get(`${API_URL}/dashboard`)
-    stocks.value = res.data
-    lastUpdated.value = new Date().toLocaleTimeString()
+
+    console.log('📊 Dashboard API 回傳:', res.data)
+
+    // 新的 API 回傳格式包含 manualStocks 和 recognizedStocks
+    if (res.data.manualStocks && res.data.recognizedStocks) {
+      stocks.value = res.data.manualStocks
+      recognizedStocks.value = res.data.recognizedStocks
+      console.log('✅ 圖片辨識股票數量:', recognizedStocks.value.length)
+      console.log('📋 第一筆辨識股票:', recognizedStocks.value[0])
+    } else {
+      // 向下相容：如果 API 還沒更新，使用舊格式
+      stocks.value = res.data
+      console.log('⚠️ 使用舊格式 API')
+    }
+
+    lastUpdated.value = new Date().toLocaleTimeString('zh-TW', { hour12: false })
   } catch (e) {
-    console.error('API Error:', e)
+    console.error('Fetch Dashboard Error:', e)
   }
 }
 
+// 統一重新整理函數
+const refreshAll = async () => {
+  await fetchData() // dashboard API 已經包含所有資料
+}
+
 const addStock = async () => {
-  if (!inputSymbol.value) return
+  const symbol = inputSymbol.value.trim()
+  if (!symbol || isLoading.value) return
+
   isLoading.value = true
   try {
-    // 手動新增時，帶入 type: 'manual'
     await axios.post(`${API_URL}/stocks`, {
-      symbol: inputSymbol.value,
+      symbol: symbol,
       type: 'manual',
     })
     inputSymbol.value = ''
-    await fetchData()
+    await fetchData() // 成功後立即重新抓取
   } catch (e) {
-    alert('新增失敗或股票已存在')
+    alert('新增失敗（可能是股票不存在或已在清單中）')
   } finally {
     isLoading.value = false
   }
 }
 
-// 測試功能：模擬機器人自動新增股票
 const triggerBot = async () => {
   try {
     await axios.post(`${API_URL}/bot-trigger`)
     await fetchData()
-    // 不跳 alert，保持體驗流暢
   } catch (e) {
-    console.error(e)
+    console.error('Bot Trigger Error:', e)
   }
 }
 
 const removeStock = async (id) => {
   if (!confirm('確定移除此監控項目?')) return
-  await axios.delete(`${API_URL}/stocks/${id}`)
-  fetchData()
+  try {
+    await axios.delete(`${API_URL}/stocks/${id}`)
+    stocks.value = stocks.value.filter((s) => (s._id || s.id) !== id) // 樂觀更新前端
+  } catch (e) {
+    console.error('Delete Stock Error:', e)
+    fetchData() // 失敗則刷回原本資料
+  }
 }
 
 const extendStock = async (id) => {
-  await axios.patch(`${API_URL}/stocks/${id}/extend`)
-  fetchData()
-  // 成功時不特別干擾使用者
+  try {
+    await axios.patch(`${API_URL}/stocks/${id}/extend`)
+    fetchData()
+  } catch (e) {
+    console.error('Extend Error:', e)
+  }
 }
 
-// --- Stealth Mode ---
+const removeRecognizedStock = async (id) => {
+  if (!confirm('確定刪除此辨識記錄?')) return
+  try {
+    await axios.delete(`${API_URL}/recognized-stocks/${id}`)
+    recognizedStocks.value = recognizedStocks.value.filter((s) => s._id !== id)
+  } catch (e) {
+    console.error('Delete Recognized Error:', e)
+  }
+}
+
+const toggleFavorite = async (id) => {
+  try {
+    const stock = recognizedStocks.value.find((s) => s._id === id)
+    if (!stock) return
+
+    // 樂觀更新 UI
+    stock.isFavorite = !stock.isFavorite
+
+    await axios.patch(`${API_URL}/recognized-stocks/${id}/favorite`, {
+      isFavorite: stock.isFavorite,
+    })
+  } catch (e) {
+    console.error('Toggle Favorite Error:', e)
+    fetchData() // 失敗刷回
+  }
+}
 
 const toggleStealth = () => {
   isStealth.value = !isStealth.value
@@ -89,155 +134,168 @@ const toggleStealth = () => {
 // --- Lifecycle ---
 
 onMounted(() => {
-  // 讀取上次的主題設定
   isStealth.value = localStorage.getItem('stealth-mode') === '1'
 
-  fetchData()
-  // 每 5 秒更新一次
-  timer = setInterval(fetchData, 10000)
+  refreshAll()
+
+  // 每 15 秒更新一次（稍微拉長一點點，降低伺服器負擔）
+  timer = setInterval(refreshAll, 15000)
 })
 
 onUnmounted(() => {
-  if (timer) clearInterval(timer)
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
 })
 </script>
 
 <template>
   <div
-    class="min-h-screen transition-colors duration-300 font-sans pb-20 selection:bg-blue-500 selection:text-white"
-    :class="isStealth ? 'bg-slate-100 text-slate-700' : 'bg-[#121212] text-gray-100'"
+    class="min-h-screen transition-colors duration-500 font-sans pb-20 selection:bg-blue-500/30"
+    :class="isStealth ? 'bg-slate-50 text-slate-700' : 'bg-[#0f0f0f] text-gray-100'"
   >
     <div class="max-w-7xl mx-auto p-4 md:p-8">
       <header
-        class="flex flex-col md:flex-row justify-between items-center border-b pb-4 mb-8 gap-4 transition-colors"
-        :class="isStealth ? 'border-gray-300' : 'border-zinc-800'"
+        class="flex flex-col md:flex-row justify-between items-center border-b pb-6 mb-8 gap-4"
+        :class="isStealth ? 'border-gray-200' : 'border-zinc-800'"
       >
-        <div class="flex items-center gap-3">
-          <h1 class="text-2xl font-bold tracking-wide">
-            {{ isStealth ? 'System Monitor Dashboard' : '📈 2026 財富自由戰情室' }}
+        <div class="flex items-center gap-4">
+          <h1 class="text-2xl font-black tracking-tight italic">
+            {{ isStealth ? 'Core_System_Report' : '🚀 2026 財富自由戰情室' }}
           </h1>
           <button
             v-if="!isStealth"
             @click="triggerBot"
-            class="px-2 py-0.5 rounded text-[10px] border border-dashed border-zinc-600 text-zinc-500 hover:text-zinc-300 hover:border-zinc-400 opacity-50 hover:opacity-100 transition"
-            title="模擬後端自動抓取股票"
+            class="px-2 py-1 rounded text-[10px] border border-zinc-700 text-zinc-500 hover:border-blue-500 hover:text-blue-400 transition-all uppercase tracking-tighter"
           >
-            🤖 Bot Test
+            Run Bot Test
           </button>
         </div>
 
-        <div class="flex items-center gap-4">
-          <div class="flex items-center gap-2 text-xs font-mono opacity-60">
-            <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-            <span>Update: {{ lastUpdated }}</span>
+        <div class="flex items-center gap-6">
+          <div class="flex flex-col items-end">
+            <div
+              class="flex items-center gap-2 text-[10px] font-mono opacity-50 uppercase tracking-widest"
+            >
+              <span
+                class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"
+              ></span>
+              Live Syncing
+            </div>
+            <span class="text-xs font-mono opacity-70">{{ lastUpdated }}</span>
           </div>
 
           <button
             @click="toggleStealth"
-            class="px-4 py-1.5 rounded-full text-xs font-medium border transition-all hover:scale-105 active:scale-95"
+            class="px-5 py-2 rounded-full text-xs font-bold border transition-all hover:scale-105 active:scale-95 shadow-sm"
             :class="
               isStealth
-                ? 'border-gray-400 text-gray-600 hover:bg-gray-200 bg-white'
-                : 'border-zinc-600 text-zinc-400 hover:border-blue-400 hover:text-blue-400 hover:bg-zinc-800'
+                ? 'border-slate-300 text-slate-500 bg-white hover:bg-slate-100'
+                : 'border-zinc-700 text-zinc-400 hover:border-blue-500 hover:text-blue-400 bg-zinc-900/50'
             "
           >
-            {{ isStealth ? '🏢 Office Mode' : '🚀 Trader Mode' }}
+            {{ isStealth ? '🏢 OFFICE MODE' : '🚀 TRADER MODE' }}
           </button>
         </div>
       </header>
 
-      <div class="flex gap-3 mb-10 max-w-md mx-auto md:mx-0">
-        <input
-          v-model="inputSymbol"
-          @keyup.enter="addStock"
-          :placeholder="isStealth ? 'Input parameter ID...' : '輸入代號加入自選 (如 2603)'"
-          class="flex-1 px-4 py-2.5 rounded-lg border outline-none transition-all shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#121212]"
-          :class="
-            isStealth
-              ? 'bg-white border-gray-300 focus:ring-blue-200 focus:border-blue-400'
-              : 'bg-zinc-900 border-zinc-700 text-white focus:ring-blue-900 focus:border-blue-500'
-          "
-        />
-        <button
-          @click="addStock"
-          :disabled="isLoading"
-          class="px-6 py-2.5 rounded-lg font-bold text-white transition shadow-lg active:scale-95 hover:shadow-blue-500/20"
-          :class="isStealth ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-500'"
-        >
-          {{ isLoading ? '...' : '＋' }}
-        </button>
-      </div>
-
-      <section class="mb-12">
-        <div class="flex items-center gap-3 mb-5 pl-1">
-          <h2 class="text-xl font-bold opacity-90 flex items-center gap-2">
-            <span v-if="!isStealth" class="text-2xl">🤖</span>
-            {{ isStealth ? 'System Auto-Tracked' : '群組自動追蹤' }}
-          </h2>
-          <span
-            class="px-2.5 py-0.5 rounded-full text-xs font-bold"
-            :class="
-              isStealth
-                ? 'bg-purple-100 text-purple-600'
-                : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-            "
-          >
-            {{ autoStocks.length }}
-          </span>
+      <section class="mb-14">
+        <div class="flex items-center justify-between mb-6 pl-1">
+          <div class="flex items-center gap-3">
+            <h2 class="text-xl font-bold tracking-tight">
+              {{ isStealth ? 'AI_ANALYTICS_DATA' : '圖片辨識分析' }}
+            </h2>
+            <span
+              class="px-2 py-0.5 rounded text-[10px] font-mono font-bold"
+              :class="
+                isStealth
+                  ? 'bg-slate-200 text-slate-500'
+                  : 'bg-green-500/10 text-green-400 border border-green-500/20'
+              "
+            >
+              COUNT: {{ recognizedStocks.length }}
+            </span>
+          </div>
         </div>
 
         <div
-          v-if="autoStocks.length === 0"
-          class="py-8 text-center border-2 border-dashed rounded-xl opacity-30"
-          :class="isStealth ? 'border-gray-300' : 'border-zinc-800'"
+          v-if="recognizedStocks.length === 0"
+          class="py-12 text-center border-2 border-dashed rounded-2xl transition-colors"
+          :class="isStealth ? 'border-slate-200 text-slate-400' : 'border-zinc-800 text-zinc-600'"
         >
-          <p class="text-sm">暫無機器人自動抓取資料</p>
-          <p v-if="!isStealth" class="text-xs mt-1">(請點擊標題旁的 Bot Test 模擬)</p>
+          <p class="text-sm font-medium">No records found.</p>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          <StockCard
-            v-for="item in autoStocks"
-            :key="item.id"
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <RecognizedStockCard
+            v-for="item in recognizedStocks"
+            :key="item._id"
             :item="item"
             :is-stealth="isStealth"
-            :badge="isStealth ? 'SYS' : 'AUTO'"
-            @remove="removeStock"
-            @extend="extendStock"
+            @remove="removeRecognizedStock"
+            @toggle-favorite="toggleFavorite"
           />
         </div>
       </section>
 
-      <section>
-        <div class="flex items-center gap-3 mb-5 pl-1">
-          <h2 class="text-xl font-bold opacity-90 flex items-center gap-2">
-            <span v-if="!isStealth" class="text-2xl">👤</span>
-            {{ isStealth ? 'Manual Watchlist' : '個人自選清單' }}
-          </h2>
-          <span
-            class="px-2.5 py-0.5 rounded-full text-xs font-bold"
+      <div class="flex gap-3 mb-14 max-w-lg">
+        <div class="relative flex-1">
+          <input
+            v-model="inputSymbol"
+            @keyup.enter="addStock"
+            :placeholder="isStealth ? 'Query identifier...' : '輸入代號加入監控 (如 2330)'"
+            class="w-full px-5 py-3 rounded-xl border outline-none transition-all"
             :class="
               isStealth
-                ? 'bg-blue-100 text-blue-600'
-                : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                ? 'bg-white border-slate-200 focus:border-slate-400 focus:ring-4 focus:ring-slate-100 text-slate-600'
+                : 'bg-zinc-900 border-zinc-800 text-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10'
+            "
+          />
+        </div>
+        <button
+          @click="addStock"
+          :disabled="isLoading"
+          class="px-8 py-3 rounded-xl font-black transition-all active:scale-95 disabled:opacity-50"
+          :class="
+            isStealth
+              ? 'bg-slate-700 text-white hover:bg-slate-800'
+              : 'bg-blue-600 text-white hover:bg-blue-500 hover:shadow-[0_0_20px_rgba(37,99,235,0.4)]'
+          "
+        >
+          {{ isLoading ? '...' : 'ADD' }}
+        </button>
+      </div>
+
+      <section>
+        <div class="flex items-center gap-3 mb-6 pl-1">
+          <h2 class="text-xl font-bold tracking-tight">
+            {{ isStealth ? 'USER_WATCHLIST_LOCAL' : '個人自選清單' }}
+          </h2>
+          <span
+            class="px-2 py-0.5 rounded text-[10px] font-mono font-bold"
+            :class="
+              isStealth
+                ? 'bg-slate-200 text-slate-500'
+                : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
             "
           >
-            {{ manualStocks.length }}
+            ITEMS: {{ manualStocks.length }}
           </span>
         </div>
 
         <div
           v-if="manualStocks.length === 0"
-          class="py-8 text-center border-2 border-dashed rounded-xl opacity-30"
-          :class="isStealth ? 'border-gray-300' : 'border-zinc-800'"
+          class="py-12 text-center border-2 border-dashed rounded-2xl"
+          :class="isStealth ? 'border-slate-200' : 'border-zinc-800'"
         >
-          <p class="text-sm">上方輸入代號加入監控</p>
+          <p class="text-sm opacity-40">Watchlist is empty.</p>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           <StockCard
             v-for="item in manualStocks"
-            :key="item.id"
+            :key="item._id || item.id"
             :item="item"
             :is-stealth="isStealth"
             @remove="removeStock"

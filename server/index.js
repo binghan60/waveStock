@@ -4,9 +4,22 @@ import * as line from '@line/bot-sdk'
 import apiRoutes from './routes/apiRouter.js'
 import webhookRoutes from './routes/webhookRouter.js'
 import 'dotenv/config'
+import mongoose from 'mongoose'
 
 const app = express()
 const PORT = 3001
+
+mongoose
+  .connect(process.env.MONGODB_URI)
+  .then(() => {
+    console.log('✅ 資料庫連線成功')
+    app.listen(PORT, () => {
+      console.log(`✅ Node Server running at http://localhost:${PORT}`)
+    })
+  })
+  .catch((err) => {
+    console.error('❌ 資料庫連線失敗', err)
+  })
 
 app.use(cors())
 
@@ -17,7 +30,3 @@ const config = {
   channelSecret: process.env.CHANNEL_SECRET,
 }
 app.use('/webhook', line.middleware(config), webhookRoutes(config))
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`)
-})
