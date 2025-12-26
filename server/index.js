@@ -1,6 +1,5 @@
 import express from 'express'
 import cors from 'cors'
-import axios from 'axios'
 import * as line from '@line/bot-sdk'
 import apiRoutes from './routes/apiRouter.js'
 import webhookRoutes from './routes/webhookRouter.js'

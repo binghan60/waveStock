@@ -112,20 +112,26 @@ router.get('/dashboard', async (req, res) => {
 })
 
 router.post('/stocks', (req, res) => {
-  const { symbol } = req.body
+  // 接收 type 參數，如果沒傳預設就是 'manual'
+  const { symbol, type = 'manual' } = req.body
+  
   if (!symbol) return res.status(400).json({ error: 'Empty symbol' })
-
+  
   const stocks = loadStocks()
-  if (stocks.find((s) => s.symbol === symbol)) {
+  
+  // 檢查是否已存在
+  const exists = stocks.find(s => s.symbol === symbol)
+  if (exists) {
     return res.status(400).json({ error: '已存在' })
   }
 
   const newStock = {
     id: Date.now(),
-    symbol: symbol,
-    createdAt: new Date().toISOString(),
+    symbol: symbol.toUpperCase(),
+    type: type, // ✨ 核心修改：紀錄來源 (auto / manual)
+    createdAt: new Date().toISOString()
   }
-
+  
   stocks.push(newStock)
   saveStocks(stocks)
   res.json({ success: true })
