@@ -1,15 +1,15 @@
 {
-  "version": 2,
-  "builds": [
+  "rewrites": [
     {
-      "src": "index.js",
-      "use": "@vercel/node"
+      "source": "/(.*)",
+      "destination": "/server/index.js"
     }
   ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "index.js"
+  "functions": {
+    "server/index.js": {
+      "memory": 1024,
+      "maxDuration": 60,
+      "includeFiles": "server/tess_bin/**"
     }
-  ]
+  }
 }
