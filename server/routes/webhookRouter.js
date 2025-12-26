@@ -1,8 +1,11 @@
 import * as line from '@line/bot-sdk'
 import express from 'express'
 import 'dotenv/config'
-import Tesseract from 'tesseract.js'
-import sharp from 'sharp'
+import axios from 'axios' // 新增: 用來打 API
+import FormData from 'form-data' // 新增: 用來包裝圖片
+
+// 填入你的 OCR.space API Key
+const OCR_API_KEY = '你的_OCR_SPACE_API_KEY' // 建議申請一個，或暫時用 'helloworld'
 
 export default (config) => {
   const router = express.Router()
@@ -38,52 +41,58 @@ async function handleEvent(event, client) {
   return Promise.resolve(null)
 }
 
-// 👇👇👇 修正重點 👇👇👇
+// 👇👇👇 改用 API 的核心邏輯 👇👇👇
 async function handleImageMessage(event, client) {
-  let worker = null
   try {
     console.log('📥 下載圖片...')
     const stream = await client.getMessageContent(event.message.id)
     const imageBuffer = await streamToBuffer(stream)
 
-    console.log('🔧 圖片前處理...')
-    const processedBuffer = await preprocessImage(imageBuffer)
+    // 轉成 Base64 字串
+    const base64Image = `data:image/jpeg;base64,${imageBuffer.toString('base64')}`
 
-    console.log('⏳ 初始化 OCR Worker (Local Script + CDN Core)...')
+    console.log('🚀 呼叫 OCR.space API...')
 
-    // [修正] 不設定 workerPath，讓它自己去 node_modules 找 (解決 ERR_WORKER_PATH)
-    // 只設定 corePath，解決 WASM 找不到的問題 (解決 ENOENT)
-    worker = await Tesseract.createWorker('chi_tra+eng', 1, {
-      
-      // 1. [關鍵] 不要設定 workerPath！讓它使用本地安裝的腳本
-      
-      // 2. [關鍵] 核心 WASM 強制走 CDN
-      // 這會讓本地的 Worker 去網路上抓 WASM，而不是去讀硬碟
-      corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0/tesseract-core.wasm.js',
-      
-      // 3. [關鍵] 快取路徑 (Vercel 唯一可寫)
-      cachePath: '/tmp',
+    // 準備 Form Data
+    const formData = new FormData()
+    formData.append('base64Image', base64Image)
+    formData.append('language', 'cht') // 設定繁體中文
+    formData.append('isOverlayRequired', 'false')
+    formData.append('scale', 'true') // 自動縮放以提高準確度
+    formData.append('OCREngine', '1') // 引擎 1 通常對中文支援較好
 
-      logger: m => {
-        if (m.status === 'recognizing text' && (m.progress * 100) % 50 === 0) {
-           console.log(`進度: ${(m.progress * 100).toFixed(0)}%`);
-        }
-      }
-    });
+    // 發送請求
+    const response = await axios.post('https://api.ocr.space/parse/image', formData, {
+      headers: {
+        ...formData.getHeaders(),
+        apikey: OCR_API_KEY,
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+    })
 
-    console.log('🚀 開始辨識...');
-    
-    const { data: { text } } = await worker.recognize(processedBuffer);
-    
-    console.log('✅ 辨識完成');
-    console.log('📜 原始文字:', text.substring(0, 50).replace(/\n/g, ' ') + '...');
-    
+    const apiResult = response.data
+
+    // 檢查 API 是否成功
+    if (apiResult.IsErroredOnProcessing) {
+      console.error('OCR API Error:', apiResult.ErrorMessage)
+      throw new Error(apiResult.ErrorMessage)
+    }
+
+    // 取得辨識文字
+    // OCR.space 可能回傳多個 ParsedResults，通常取第一個
+    const text = apiResult.ParsedResults?.[0]?.ParsedText || ''
+
+    console.log('✅ API 辨識完成')
+    console.log('📜 原始文字:', text.substring(0, 50).replace(/\n/g, ' ') + '...')
+
+    // 解析資料 (使用原本的邏輯)
     const stockData = parseStockData(text)
 
     if (!stockData.code) {
-      return client.replyMessage(event.replyToken, { 
-        type: 'text', 
-        text: '⚠️ 辨識失敗：找不到股票代號' 
+      return client.replyMessage(event.replyToken, {
+        type: 'text',
+        text: '⚠️ 辨識失敗：找不到股票代號',
       })
     }
 
@@ -97,54 +106,36 @@ async function handleImageMessage(event, client) {
 ──────────────`
 
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText })
-
   } catch (error) {
-    console.error('❌ OCR Error:', error)
-    return client.replyMessage(event.replyToken, { 
-      type: 'text', 
-      text: '系統忙碌中，請稍後再試。' 
+    console.error('❌ Error:', error.message)
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: '系統忙碌中，請稍後再試。',
     })
-  } finally {
-    if (worker) {
-      await worker.terminate(); 
-    }
   }
 }
 
-async function preprocessImage(buffer) {
-  return sharp(buffer)
-    .resize({ width: 1000 })
-    .grayscale()
-    .normalize()
-    .threshold(160)
-    .toBuffer()
-}
-
+// 解析邏輯 (保持不變)
 function parseStockData(text) {
-  const cleanText = text
-    .replace(/\s+/g, ' ')
-    .replace(/O/g, '0')
-    .replace(/o/g, '0')
-    .replace(/l/g, '1')
-    .replace(/I/g, '1')
-    
+  const cleanText = text.replace(/\s+/g, ' ').replace(/O/g, '0').replace(/o/g, '0').replace(/l/g, '1').replace(/I/g, '1')
+
   const result = {}
-  
+
   const codeMatch = cleanText.match(/(\d{4})/)
   if (codeMatch) result.code = codeMatch[1]
-  
+
   const supportMatch = cleanText.match(/支撐[^0-9]*([\d\.\-~]+)/)
   if (supportMatch) result.support = supportMatch[1]
-  
+
   const shortMatch = cleanText.match(/[短矩]線?[^0-9]*([\d\.]+)/)
   if (shortMatch) result.shortTermProfit = shortMatch[1]
-  
+
   const waveMatch = cleanText.match(/波段[^0-9]*([\d\.]+)/)
   if (waveMatch) result.waveProfit = waveMatch[1]
-  
+
   const swapMatch = cleanText.match(/[換挽换][^0-9\n]*([\d\.]+)/)
   if (swapMatch) result.swapRef = swapMatch[1]
-  
+
   return result
 }
 
