@@ -1,7 +1,7 @@
 import * as line from '@line/bot-sdk'
 import express from 'express'
 import 'dotenv/config'
-import Tesseract from 'tesseract.js'
+import Tesseract from 'tesseract.js'  // ✅ 改成這樣
 import sharp from 'sharp'
 
 export default (config) => {
@@ -38,44 +38,43 @@ async function handleEvent(event, client) {
   return Promise.resolve(null)
 }
 
-// ✅ 使用本地檔案路徑
+// ✅ 完全參考你的測試檔
 async function handleImageMessage(event, client) {
   try {
+    console.log('📥 開始下載圖片...')
     const stream = await client.getMessageContent(event.message.id)
     const imageBuffer = await streamToBuffer(stream)
+    
+    console.log('🔧 圖片前處理中...')
     const processedBuffer = await preprocessImage(imageBuffer)
 
-    console.log('⏳ OCR 引擎啟動 (Local Files Mode)...')
+    console.log('⏳ OCR 辨識中...')
 
+    // ✅ 用跟測試檔一模一樣的方式呼叫
     const {
       data: { text },
     } = await Tesseract.recognize(processedBuffer, 'chi_tra+eng', {
-      // ✅ 使用專案內的本地檔案
-      workerPath: '/tesseract/worker.min.js',
-      corePath: '/tesseract',
-      
-      // 語言包還是用 CDN (因為檔案太大)
-      langPath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/lang-data',
-      
-      // Vercel 的暫存路徑
-      cachePath: '/tmp',
-
       logger: (m) => {
-        if (m.status === 'recognizing text' && m.progress === 1) {
-          console.log('✅ OCR 完成')
+        if (m.status === 'recognizing text') {
+          console.log(`進度: ${(m.progress * 100).toFixed(0)}%`)
         }
       },
     })
 
-    console.log('📜 [OCR 成功]:', text.substring(0, 50).replace(/\n/g, ' ') + '...')
+    console.log('✅ 辨識完成')
+    console.log('📜 原始文字:', text.substring(0, 100).replace(/\n/g, ' '))
+    
     const stockData = parseStockData(text)
 
     if (!stockData.code) {
+      console.log('⚠️ 解析失敗，找不到股票代號')
       return client.replyMessage(event.replyToken, { 
         type: 'text', 
         text: '⚠️ 辨識失敗：找不到股票代號' 
       })
     }
+
+    console.log('📊 解析結果:', stockData)
 
     const replyText = `📊 分析結果
 ──────────────
@@ -87,8 +86,10 @@ async function handleImageMessage(event, client) {
 ──────────────`
 
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText })
+    
   } catch (error) {
-    console.error('❌ OCR Critical Error:', error)
+    console.error('❌ OCR Error:', error.message)
+    console.error('Error Stack:', error.stack)
     return client.replyMessage(event.replyToken, { 
       type: 'text', 
       text: '系統忙碌中，請稍後再試。' 
@@ -96,19 +97,19 @@ async function handleImageMessage(event, client) {
   }
 }
 
-// --- 工具函式 ---
-
+// ✅ 跟測試檔一樣的前處理
 async function preprocessImage(buffer) {
   return sharp(buffer)
-    .resize({ width: 1000 })
+    .resize({ width: 1500 })  // 跟測試檔一樣用 1500
     .grayscale()
     .normalize()
     .threshold(160)
     .toBuffer()
 }
 
+// ✅ 跟測試檔一樣的解析邏輯
 function parseStockData(text) {
-  let cleanText = text
+  const cleanText = text
     .replace(/\s+/g, ' ')
     .replace(/O/g, '0')
     .replace(/o/g, '0')
@@ -120,13 +121,13 @@ function parseStockData(text) {
   const codeMatch = cleanText.match(/(\d{4})/)
   if (codeMatch) result.code = codeMatch[1]
   
-  const supportMatch = cleanText.match(/支[^0-9\n]*([\d\.\-~]+)/)
+  const supportMatch = cleanText.match(/支撐[^0-9]*([\d\.\-~]+)/)
   if (supportMatch) result.support = supportMatch[1]
   
-  const shortMatch = cleanText.match(/[短矩][^0-9\n]*([\d\.]+)/)
+  const shortMatch = cleanText.match(/短線[^0-9]*([\d\.]+)/)
   if (shortMatch) result.shortTermProfit = shortMatch[1]
   
-  const waveMatch = cleanText.match(/波[^0-9\n]*([\d\.]+)/)
+  const waveMatch = cleanText.match(/波段[^0-9]*([\d\.]+)/)
   if (waveMatch) result.waveProfit = waveMatch[1]
   
   const swapMatch = cleanText.match(/[換挽换][^0-9\n]*([\d\.]+)/)
