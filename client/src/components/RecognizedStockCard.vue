@@ -67,7 +67,6 @@ const marketDetails = computed(() => {
 })
 
 const daysLeft = computed(() => {
-  // 優先使用 updatedAt，如果沒有則使用 createdAt
   const dateStr = props.item.updatedAt || props.item.createdAt
   const trackingDate = new Date(dateStr)
   
@@ -83,6 +82,7 @@ const daysLeft = computed(() => {
   return Math.max(0, diffDays)
 })
 
+// ★ 核心邏輯調整 1: 判定是否命中 (亮燈邏輯)
 const priceInRange = computed(() => {
   if (!props.item.market) return { inRange: false, matchedIndicators: [] }
 
@@ -96,12 +96,12 @@ const priceInRange = computed(() => {
   const shortTermProfit = parseFloat(props.item.shortTermProfit)
   const waveProfit = parseFloat(props.item.waveProfit)
 
-  // 1. 檢查是否 <= 換股價
+  // 1. 換股檢查：現價 <= 換股價 (跌破底線，觸發警示)
   if (!isNaN(swapRef) && currentPrice <= swapRef) {
     matchedIndicators.push('換股')
   }
 
-  // 2. 檢查是否落在支撐區間
+  // 2. 支撐檢查：落在區間內
   if (props.item.support) {
     const supportStr = props.item.support.toString()
     if (supportStr.includes('-')) {
@@ -112,7 +112,6 @@ const priceInRange = computed(() => {
     } else {
       const val = parseFloat(supportStr)
       if (!isNaN(val)) {
-        // 支撐可以是單一值，給予一些容差
         const tolerance = 0.5
         if (Math.abs(currentPrice - val) <= tolerance) {
           matchedIndicators.push('支撐')
@@ -121,13 +120,15 @@ const priceInRange = computed(() => {
     }
   }
 
-  // 3. 檢查是否 > 波段價（波段優先於短線）
-  if (!isNaN(waveProfit) && currentPrice > waveProfit) {
-    matchedIndicators.push('波段')
-  }
-  // 4. 檢查是否 > 短線價（只有在沒有命中波段時才檢查）
-  else if (!isNaN(shortTermProfit) && currentPrice > shortTermProfit) {
+  // 3. 短線檢查：現價 >= 短線價 (達標)
+  // 注意：不再使用 else if，允許同時命中短線與波段
+  if (!isNaN(shortTermProfit) && currentPrice >= shortTermProfit) {
     matchedIndicators.push('短線')
+  }
+
+  // 4. 波段檢查：現價 >= 波段價 (達標)
+  if (!isNaN(waveProfit) && currentPrice >= waveProfit) {
+    matchedIndicators.push('波段')
   }
 
   return {
@@ -199,26 +200,17 @@ const priceChart = computed(() => {
 
     let diff, diffPercent
     if (target.rangeEnd) {
-      // 支撐區間的處理
       if (currentPrice >= target.value && currentPrice <= target.rangeEnd) {
         diff = 0
         diffPercent = '0.00'
       } else {
         const closest = currentPrice < target.value ? target.value : target.rangeEnd
-        diff = currentPrice - closest // 改為現價 - 目標，讓正負號符合直覺
+        diff = currentPrice - closest
         diffPercent = ((diff / currentPrice) * 100).toFixed(2)
       }
     } else {
-      // 單一目標價格的處理
-      // 換股邏輯相反：現價越高，離換股價越遠（負號）
-      if (target.label === '換股') {
-        diff = target.value - currentPrice // 換股：目標 - 現價
-        diffPercent = ((diff / currentPrice) * 100).toFixed(2)
-      } else {
-        // 其他指標（短線、波段）：正常邏輯
-        diff = currentPrice - target.value // 現價 - 目標
-        diffPercent = ((diff / currentPrice) * 100).toFixed(2)
-      }
+      diff = currentPrice - target.value
+      diffPercent = ((diff / currentPrice) * 100).toFixed(2)
     }
 
     return { ...target, position, positionEnd, diff, diffPercent }
