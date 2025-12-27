@@ -172,7 +172,7 @@ const triggerBot = async () => {
   }
 }
 
-const removeStock = (id) => {
+const removeStock = async (id) => {
   if (!confirm('確定移除此監控項目?')) return
   try {
     // 從 localStorage 讀取並過濾掉該股票
@@ -181,7 +181,7 @@ const removeStock = (id) => {
     saveManualStocks(manualStocksLocal)
     
     // 立即更新 UI
-    stocks.value = stocks.value.filter((s) => (s._id || s.id) !== id)
+  await fetchData() // dashboard API 已經包含所有資料
   } catch (e) {
     console.error('Delete Stock Error:', e)
   }
