@@ -103,15 +103,13 @@ async function handleImageMessage(event, client) {
       }).sort({ createdAt: -1 })
 
       if (existingStock) {
-        // 30 天內已經有這支股票，更新資料和日期
         existingStock.support = stockData.support
         existingStock.shortTermProfit = stockData.shortTermProfit
         existingStock.waveProfit = stockData.waveProfit
         existingStock.swapRef = stockData.swapRef
-        existingStock.createdAt = new Date() // 更新追蹤日期
+        existingStock.updatedAt = new Date()
         
         await existingStock.save()
-        console.log('✅ 股票資料已更新（延長追蹤期限）:', stockData.code)
       } else {
         // 超過 30 天或沒有該股票，新增一筆
         const recognizedStock = new RecognizedStock({

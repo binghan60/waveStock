@@ -92,12 +92,26 @@ async function fetchStockData(stockIds) {
 }
 // --- API 路由 ---
 
+// 新增：專門用來獲取股價的 API
+router.post('/stock-prices', async (req, res) => {
+  try {
+    const { symbols } = req.body
+
+    if (!symbols || !Array.isArray(symbols) || symbols.length === 0) {
+      return res.json([])
+    }
+
+    const prices = await fetchStockData(symbols)
+    res.json(prices)
+  } catch (e) {
+    console.error('Fetch Stock Prices Error:', e)
+    res.status(500).json({ error: 'Server Error' })
+  }
+})
+
 router.get('/dashboard', async (req, res) => {
   try {
-    // 1. 取得手動新增的股票 (stocks.json)
-    const stocks = loadStocks()
-
-    // 2. 取得圖片辨識的股票 (MongoDB) - 只取 30 天內的
+    // 取得圖片辨識的股票 (MongoDB) - 只取 30 天內的
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
@@ -107,41 +121,16 @@ router.get('/dashboard', async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(100)
 
-    // 3. 收集所有需要查詢價格的股票代號
-    const manualSymbols = stocks.map((s) => s.symbol)
-    const recognizedSymbols = recognizedStocks.map((s) => s.code)
-    const allSymbols = [...new Set([...manualSymbols, ...recognizedSymbols])] // 去重
+    // 合併範例股票和真實辨識股票
+    const allRecognizedStocks = [...recognizedStocks.map((s) => s.toObject())]
+    // 只回傳辨識股票資料，不包含 manualStocks
+    const recognizedResult = allRecognizedStocks.map((stock) => ({
+      ...stock,
+      market: null, // 前端會自行呼叫 /stock-prices 獲取價格
+    }))
 
-    // 4. 如果沒有任何股票，回傳空物件
-    if (allSymbols.length === 0) {
-      return res.json({
-        manualStocks: [],
-        recognizedStocks: [],
-      })
-    }
-    // 5. 去證交所抓價格
-    const prices = await fetchStockData(allSymbols)
-    // 6. 合併手動新增的股票資料
-    const manualResult = stocks.map((stock) => {
-      const priceData = prices.find((p) => p.symbol === stock.symbol)
-      return {
-        ...stock, // 包含 id, createdAt, type
-        market: priceData || null, // 包含 currentPrice, yesterdayClose
-      }
-    })
-
-    // 7. 合併圖片辨識的股票資料
-    const recognizedResult = recognizedStocks.map((stock) => {
-      const priceData = prices.find((p) => p.symbol === stock.code)
-      return {
-        ...stock.toObject(), // 轉換 MongoDB 物件
-        market: priceData || null, // 包含即時價格資訊
-      }
-    })
-
-    // 8. 回傳分類後的資料
+    // 回傳辨識股票資料
     res.json({
-      manualStocks: manualResult,
       recognizedStocks: recognizedResult,
     })
   } catch (e) {

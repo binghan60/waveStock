@@ -21,23 +21,95 @@ const manualStocks = computed(() => {
 })
 
 // --- API 互動 ---
+// 從 localStorage 獲取自選清單（辨識股票的星星標記）
+const getFavorites = () => {
+  try {
+    const stored = localStorage.getItem('stock-favorites')
+    return stored ? JSON.parse(stored) : []
+  } catch (e) {
+    console.error('Failed to load favorites from localStorage:', e)
+    return []
+  }
+}
+
+// 儲存自選清單到 localStorage
+const saveFavorites = (favorites) => {
+  try {
+    localStorage.setItem('stock-favorites', JSON.stringify(favorites))
+  } catch (e) {
+    console.error('Failed to save favorites to localStorage:', e)
+  }
+}
+
+// 從 localStorage 獲取個人自選清單（手動新增的股票）
+const getManualStocks = () => {
+  try {
+    const stored = localStorage.getItem('manual-stocks')
+    return stored ? JSON.parse(stored) : []
+  } catch (e) {
+    console.error('Failed to load manual stocks from localStorage:', e)
+    return []
+  }
+}
+
+// 儲存個人自選清單到 localStorage
+const saveManualStocks = (stocks) => {
+  try {
+    localStorage.setItem('manual-stocks', JSON.stringify(stocks))
+  } catch (e) {
+    console.error('Failed to save manual stocks to localStorage:', e)
+  }
+}
 
 const fetchData = async () => {
   try {
+    // 從 localStorage 讀取手動新增的股票
+    const manualStocksLocal = getManualStocks()
+    
+    // 從 localStorage 讀取自選清單
+    const favorites = getFavorites()
+
+    // 從 API 只獲取辨識股票
     const res = await axios.get(`${API_URL}/dashboard`)
 
     console.log('📊 Dashboard API 回傳:', res.data)
 
-    // 新的 API 回傳格式包含 manualStocks 和 recognizedStocks
-    if (res.data.manualStocks && res.data.recognizedStocks) {
-      stocks.value = res.data.manualStocks
-      recognizedStocks.value = res.data.recognizedStocks
+    // 收集所有需要查詢價格的股票代號
+    const manualSymbols = manualStocksLocal.map((s) => s.symbol)
+    const recognizedSymbols = res.data.recognizedStocks ? res.data.recognizedStocks.map((s) => s.code) : []
+    const allSymbols = [...new Set([...manualSymbols, ...recognizedSymbols])] // 去重
+
+    // 如果有股票代號，去 API 獲取即時價格
+    let prices = []
+    if (allSymbols.length > 0) {
+      try {
+        const priceRes = await axios.post(`${API_URL}/stock-prices`, { symbols: allSymbols })
+        prices = priceRes.data || []
+      } catch (err) {
+        console.error('獲取股價失敗:', err)
+      }
+    }
+
+    // 合併手動新增的股票與即時價格
+    stocks.value = manualStocksLocal.map((stock) => {
+      const priceData = prices.find((p) => p.symbol === stock.symbol)
+      return {
+        ...stock,
+        market: priceData || null,
+      }
+    })
+
+    // 合併辨識股票的自選狀態與即時價格
+    if (res.data.recognizedStocks) {
+      recognizedStocks.value = res.data.recognizedStocks.map(stock => {
+        const priceData = prices.find((p) => p.symbol === stock.code)
+        return {
+          ...stock,
+          isFavorite: favorites.includes(stock._id),
+          market: priceData || null,
+        }
+      })
       console.log('✅ 圖片辨識股票數量:', recognizedStocks.value.length)
-      console.log('📋 第一筆辨識股票:', recognizedStocks.value[0])
-    } else {
-      // 向下相容：如果 API 還沒更新，使用舊格式
-      stocks.value = res.data
-      console.log('⚠️ 使用舊格式 API')
     }
 
     lastUpdated.value = new Date().toLocaleTimeString('zh-TW', { hour12: false })
@@ -52,19 +124,39 @@ const refreshAll = async () => {
 }
 
 const addStock = async () => {
-  const symbol = inputSymbol.value.trim()
+  const symbol = inputSymbol.value.trim().toUpperCase()
   if (!symbol || isLoading.value) return
 
   isLoading.value = true
   try {
-    await axios.post(`${API_URL}/stocks`, {
+    // 從 localStorage 讀取現有股票
+    const manualStocksLocal = getManualStocks()
+
+    // 檢查是否已存在
+    const exists = manualStocksLocal.find((s) => s.symbol === symbol)
+    if (exists) {
+      alert('此股票已在清單中')
+      isLoading.value = false
+      return
+    }
+
+    // 新增股票到 localStorage
+    const newStock = {
+      _id: `manual-${Date.now()}`,
+      id: Date.now(),
       symbol: symbol,
       type: 'manual',
-    })
+      createdAt: new Date().toISOString(),
+    }
+
+    manualStocksLocal.push(newStock)
+    saveManualStocks(manualStocksLocal)
+
     inputSymbol.value = ''
-    await fetchData() // 成功後立即重新抓取
+    await fetchData() // 重新抓取資料（包含股價）
   } catch (e) {
-    alert('新增失敗（可能是股票不存在或已在清單中）')
+    alert('新增失敗')
+    console.error('Add Stock Error:', e)
   } finally {
     isLoading.value = false
   }
@@ -76,28 +168,25 @@ const triggerBot = async () => {
     await fetchData()
   } catch (e) {
     console.error('Bot Trigger Error:', e)
+    alert('Bot trigger 功能暫時不可用')
   }
 }
 
-const removeStock = async (id) => {
+const removeStock = (id) => {
   if (!confirm('確定移除此監控項目?')) return
   try {
-    await axios.delete(`${API_URL}/stocks/${id}`)
-    stocks.value = stocks.value.filter((s) => (s._id || s.id) !== id) // 樂觀更新前端
+    // 從 localStorage 讀取並過濾掉該股票
+    let manualStocksLocal = getManualStocks()
+    manualStocksLocal = manualStocksLocal.filter((s) => s._id !== id && s.id !== id)
+    saveManualStocks(manualStocksLocal)
+    
+    // 立即更新 UI
+    stocks.value = stocks.value.filter((s) => (s._id || s.id) !== id)
   } catch (e) {
     console.error('Delete Stock Error:', e)
-    fetchData() // 失敗則刷回原本資料
   }
 }
 
-const extendStock = async (id) => {
-  try {
-    await axios.patch(`${API_URL}/stocks/${id}/extend`)
-    fetchData()
-  } catch (e) {
-    console.error('Extend Error:', e)
-  }
-}
 
 const removeRecognizedStock = async (id) => {
   if (!confirm('確定刪除此辨識記錄?')) return
@@ -109,21 +198,28 @@ const removeRecognizedStock = async (id) => {
   }
 }
 
-const toggleFavorite = async (id) => {
-  try {
-    const stock = recognizedStocks.value.find((s) => s._id === id)
-    if (!stock) return
+const toggleFavorite = (id) => {
+  const stock = recognizedStocks.value.find((s) => s._id === id)
+  if (!stock) return
 
-    // 樂觀更新 UI
-    stock.isFavorite = !stock.isFavorite
+  // 切換自選狀態
+  stock.isFavorite = !stock.isFavorite
 
-    await axios.patch(`${API_URL}/recognized-stocks/${id}/favorite`, {
-      isFavorite: stock.isFavorite,
-    })
-  } catch (e) {
-    console.error('Toggle Favorite Error:', e)
-    fetchData() // 失敗刷回
+  // 更新 localStorage
+  const favorites = getFavorites()
+  if (stock.isFavorite) {
+    // 加入自選
+    if (!favorites.includes(id)) {
+      favorites.push(id)
+    }
+  } else {
+    // 移除自選
+    const index = favorites.indexOf(id)
+    if (index > -1) {
+      favorites.splice(index, 1)
+    }
   }
+  saveFavorites(favorites)
 }
 
 const toggleStealth = () => {
@@ -299,7 +395,6 @@ onUnmounted(() => {
             :item="item"
             :is-stealth="isStealth"
             @remove="removeStock"
-            @extend="extendStock"
           />
         </div>
       </section>

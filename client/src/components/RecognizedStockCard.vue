@@ -67,51 +67,73 @@ const marketDetails = computed(() => {
 })
 
 const daysLeft = computed(() => {
-  const created = new Date(props.item.createdAt)
-  if (isNaN(created.getTime())) return 0
+  // 優先使用 updatedAt，如果沒有則使用 createdAt
+  const dateStr = props.item.updatedAt || props.item.createdAt
+  const trackingDate = new Date(dateStr)
+  
+  if (isNaN(trackingDate.getTime())) return 0
+  
   const now = new Date()
-  const diffTime = 30 * 24 * 60 * 60 * 1000 - (now - created)
+  const expiryDate = new Date(trackingDate)
+  expiryDate.setDate(expiryDate.getDate() + 30)
+  
+  const diffTime = expiryDate - now
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  
   return Math.max(0, diffDays)
 })
 
 const priceInRange = computed(() => {
-  if (!props.item.market) return { inRange: false, matchedIndicator: null }
+  if (!props.item.market) return { inRange: false, matchedIndicators: [] }
 
   const currentPrice = parseFloat(props.item.market.currentPrice)
-  if (isNaN(currentPrice)) return { inRange: false, matchedIndicator: null }
+  if (isNaN(currentPrice)) return { inRange: false, matchedIndicators: [] }
 
-  const tolerance = 0.5
+  const matchedIndicators = []
 
+  // 取得各指標的值
+  const swapRef = parseFloat(props.item.swapRef)
+  const shortTermProfit = parseFloat(props.item.shortTermProfit)
+  const waveProfit = parseFloat(props.item.waveProfit)
+
+  // 1. 檢查是否 <= 換股價
+  if (!isNaN(swapRef) && currentPrice <= swapRef) {
+    matchedIndicators.push('換股')
+  }
+
+  // 2. 檢查是否落在支撐區間
   if (props.item.support) {
     const supportStr = props.item.support.toString()
     if (supportStr.includes('-')) {
       const [low, high] = supportStr.split('-').map((v) => parseFloat(v.trim()))
       if (!isNaN(low) && !isNaN(high) && currentPrice >= low && currentPrice <= high) {
-        return { inRange: true, matchedIndicator: '支撐區間', color: 'blue' }
+        matchedIndicators.push('支撐')
       }
     } else {
       const val = parseFloat(supportStr)
-      if (!isNaN(val) && Math.abs(currentPrice - val) <= tolerance) {
-        return { inRange: true, matchedIndicator: '支撐', color: 'blue' }
+      if (!isNaN(val)) {
+        // 支撐可以是單一值，給予一些容差
+        const tolerance = 0.5
+        if (Math.abs(currentPrice - val) <= tolerance) {
+          matchedIndicators.push('支撐')
+        }
       }
     }
   }
 
-  const indicators = [
-    { key: 'shortTermProfit', label: '短線', color: 'green' },
-    { key: 'waveProfit', label: '波段', color: 'purple' },
-    { key: 'swapRef', label: '換股', color: 'orange' },
-  ]
-
-  for (const ind of indicators) {
-    const val = parseFloat(props.item[ind.key])
-    if (!isNaN(val) && Math.abs(currentPrice - val) <= tolerance) {
-      return { inRange: true, matchedIndicator: ind.label, color: ind.color }
-    }
+  // 3. 檢查是否 > 波段價（波段優先於短線）
+  if (!isNaN(waveProfit) && currentPrice > waveProfit) {
+    matchedIndicators.push('波段')
+  }
+  // 4. 檢查是否 > 短線價（只有在沒有命中波段時才檢查）
+  else if (!isNaN(shortTermProfit) && currentPrice > shortTermProfit) {
+    matchedIndicators.push('短線')
   }
 
-  return { inRange: false, matchedIndicator: null }
+  return {
+    inRange: matchedIndicators.length > 0,
+    matchedIndicators,
+  }
 })
 
 const priceChart = computed(() => {
@@ -177,16 +199,27 @@ const priceChart = computed(() => {
 
     let diff, diffPercent
     if (target.rangeEnd) {
+      // 支撐區間的處理
       if (currentPrice >= target.value && currentPrice <= target.rangeEnd) {
         diff = 0
+        diffPercent = '0.00'
       } else {
         const closest = currentPrice < target.value ? target.value : target.rangeEnd
-        diff = closest - currentPrice
+        diff = currentPrice - closest // 改為現價 - 目標，讓正負號符合直覺
+        diffPercent = ((diff / currentPrice) * 100).toFixed(2)
       }
     } else {
-      diff = target.value - currentPrice
+      // 單一目標價格的處理
+      // 換股邏輯相反：現價越高，離換股價越遠（負號）
+      if (target.label === '換股') {
+        diff = target.value - currentPrice // 換股：目標 - 現價
+        diffPercent = ((diff / currentPrice) * 100).toFixed(2)
+      } else {
+        // 其他指標（短線、波段）：正常邏輯
+        diff = currentPrice - target.value // 現價 - 目標
+        diffPercent = ((diff / currentPrice) * 100).toFixed(2)
+      }
     }
-    diffPercent = ((diff / currentPrice) * 100).toFixed(2)
 
     return { ...target, position, positionEnd, diff, diffPercent }
   })
@@ -363,30 +396,28 @@ const priceChart = computed(() => {
     <div class="grid grid-cols-2 gap-3 mt-4">
       <div
         v-for="conf in [
-          { label: '換股', key: 'swapRef', color: 'text-orange-400', indicatorColor: 'orange' },
-          { label: '支撐', key: 'support', color: 'text-blue-400', indicatorColor: 'blue' },
+          { label: '換股', key: 'swapRef', color: 'text-orange-400', indicatorColor: 'orange', bgColor: 'bg-orange-500/20' },
+          { label: '支撐', key: 'support', color: 'text-blue-400', indicatorColor: 'blue', bgColor: 'bg-blue-500/20' },
           {
             label: '短線',
             key: 'shortTermProfit',
             color: 'text-green-400',
             indicatorColor: 'green',
+            bgColor: 'bg-green-500/20',
           },
-          { label: '波段', key: 'waveProfit', color: 'text-purple-400', indicatorColor: 'purple' },
+          { label: '波段', key: 'waveProfit', color: 'text-purple-400', indicatorColor: 'purple', bgColor: 'bg-purple-500/20' },
         ]"
         :key="conf.key"
         class="relative flex flex-col p-3 rounded-xl border transition-all duration-500"
         :class="[
           isStealth ? 'bg-gray-50 border-gray-100' : 'bg-white/5 border-transparent',
 
-          // 命中時觸發自定義閃爍動畫
-          priceInRange.inRange &&
-          (priceInRange.matchedIndicator === conf.label ||
-            (priceInRange.matchedIndicator === '支撐區間' && conf.label === '支撐'))
+          // 命中時觸發背景顏色和動畫
+          priceInRange.matchedIndicators.includes(conf.label)
             ? [
-                'indicator-active-hit',
+                `indicator-active-hit-${conf.indicatorColor}`,
                 'border-2',
-                'shadow-lg',
-                isStealth ? 'text-slate-600' : conf.color,
+                isStealth ? 'bg-gray-200 text-slate-700' : conf.color,
               ]
             : '',
         ]"
@@ -405,7 +436,7 @@ const priceChart = computed(() => {
               {{
                 priceChart.find((p) => p.label === conf.label).diff === 0
                   ? 'HIT'
-                  : (priceChart.find((p) => p.label === conf.label).diff > 0 ? '+' : '') +
+                  : (priceChart.find((p) => p.label === conf.label).diffPercent >= 0 ? '+' : '') +
                     priceChart.find((p) => p.label === conf.label).diffPercent +
                     '%'
               }}
@@ -428,7 +459,7 @@ const priceChart = computed(() => {
       :class="isStealth ? 'border-gray-100' : 'border-zinc-700/50'"
     >
       <span>{{
-        new Date(item.createdAt).toLocaleString('zh-TW', {
+        new Date(item.updatedAt || item.createdAt).toLocaleString('zh-TW', {
           month: '2-digit',
           day: '2-digit',
           hour: '2-digit',
@@ -443,22 +474,79 @@ const priceChart = computed(() => {
 </template>
 
 <style scoped>
-@keyframes indicator-glow {
+@keyframes indicator-glow-orange {
   0%,
   100% {
-    background-color: rgba(currentColor, 0.1);
-    border-color: rgba(currentColor, 0.4);
+    background-color: rgba(249, 115, 22, 0.2);
+    border-color: rgba(249, 115, 22, 0.6);
+    box-shadow: 0 0 20px rgba(249, 115, 22, 0.3);
   }
   50% {
-    background-color: rgba(currentColor, 0.25);
-    border-color: rgba(currentColor, 0.9);
+    background-color: rgba(249, 115, 22, 0.35);
+    border-color: rgba(249, 115, 22, 1);
+    box-shadow: 0 0 30px rgba(249, 115, 22, 0.5);
   }
 }
 
-.indicator-active-hit {
-  /* 這裡使用 currentColor 會自動抓取 class 中的 text-{color} */
-  animation: indicator-glow 1.5s ease-in-out infinite;
+@keyframes indicator-glow-blue {
+  0%,
+  100% {
+    background-color: rgba(59, 130, 246, 0.2);
+    border-color: rgba(59, 130, 246, 0.6);
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  }
+  50% {
+    background-color: rgba(59, 130, 246, 0.35);
+    border-color: rgba(59, 130, 246, 1);
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
+  }
+}
+
+@keyframes indicator-glow-green {
+  0%,
+  100% {
+    background-color: rgba(34, 197, 94, 0.2);
+    border-color: rgba(34, 197, 94, 0.6);
+    box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+  }
+  50% {
+    background-color: rgba(34, 197, 94, 0.35);
+    border-color: rgba(34, 197, 94, 1);
+    box-shadow: 0 0 30px rgba(34, 197, 94, 0.5);
+  }
+}
+
+@keyframes indicator-glow-purple {
+  0%,
+  100% {
+    background-color: rgba(168, 85, 247, 0.2);
+    border-color: rgba(168, 85, 247, 0.6);
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
+  }
+  50% {
+    background-color: rgba(168, 85, 247, 0.35);
+    border-color: rgba(168, 85, 247, 1);
+    box-shadow: 0 0 30px rgba(168, 85, 247, 0.5);
+  }
+}
+
+.indicator-active-hit-orange {
+  animation: indicator-glow-orange 1.5s ease-in-out infinite;
   z-index: 10;
-  border-color: currentColor !important;
+}
+
+.indicator-active-hit-blue {
+  animation: indicator-glow-blue 1.5s ease-in-out infinite;
+  z-index: 10;
+}
+
+.indicator-active-hit-green {
+  animation: indicator-glow-green 1.5s ease-in-out infinite;
+  z-index: 10;
+}
+
+.indicator-active-hit-purple {
+  animation: indicator-glow-purple 1.5s ease-in-out infinite;
+  z-index: 10;
 }
 </style>
