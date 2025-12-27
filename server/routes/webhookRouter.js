@@ -137,6 +137,8 @@ async function handleImageMessage(event, client) {
 💰 短線：${stockData.shortTermProfit || '無資料'}
 🌊 波段：${stockData.waveProfit || '無資料'}
 🔄 換股：${stockData.swapRef || '無資料'}
+立即前往儀表板查看
+https://wave-stock.vercel.app/
 ──────────────`
 
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText })
