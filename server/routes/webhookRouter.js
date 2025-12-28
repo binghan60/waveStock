@@ -148,77 +148,101 @@ https://wave-stock.vercel.app/
   }
 }
 
+/**
+ * 解析 OCR 文字 (加入價格錨點過濾，排除成交量與均線干擾)
+ */
 function parseStockData(text) {
-  // 1. 基本字元清理 (統一符號)
+  // 1. 基本字元清理
   const cleanText = text
     .replace(/O/g, '0')
     .replace(/o/g, '0')
     .replace(/l/g, '1')
     .replace(/I/g, '1')
-    .replace(/~/g, '-') // 波浪號轉減號
-    .replace(/—/g, '-') // 長破折號轉減號
-    .replace(/\s+/g, '\n') // 統一換行
+    .replace(/~/g, '-')
+    .replace(/—/g, '-')
+    .replace(/,/g, '') // 移除數字中的逗號 (如 27,138 -> 27138)
+    .replace(/\s+/g, '\n')
 
   const result = {}
 
-  // --- A. 抓取股票代號 (全域搜尋) ---
+  // --- A. 抓取股票代號 ---
   const codeMatch = cleanText.match(/(\d{4})/)
   if (codeMatch) result.code = codeMatch[1]
 
-  // --- B. 鎖定「操作策略」區塊 ---
-  // 我們只看 'STRATEGY' 或 '操作策略' 之後的文字，避免抓到上方的 SMA、收盤價或日期
+  // --- B. 鎖定區塊並清理顯著雜訊 ---
   let strategyIndex = cleanText.search(/STRATEGY|操作策略|支撐區間/i)
-  if (strategyIndex === -1) strategyIndex = 0 // 找不到就全搜
+  if (strategyIndex === -1) strategyIndex = 0
 
   let content = cleanText.substring(strategyIndex)
 
-  // --- C. 清除特定雜訊 (這是防呆的關鍵) ---
-  // 1. 移除日期格式 (如 2025/12/04, 2025/124)，避免被當成股價
-  content = content.replace(/\d{4}\/\d{1,2}\/?\d{0,2}/g, '')
-  // 2. 移除盈虧比 (如 1:4.5)，避免被切成 1 和 4.5
-  content = content.replace(/\d+\s*[:：]\s*\d+(\.\d+)?/g, '')
-  // 3. 移除成交量 (如 34051張)
-  content = content.replace(/\d+張/g, '')
+  // 🔥 強力清理：移除常見干擾源
+  content = content
+    .replace(/MA\d+\s*\d+/gi, '') // 移除 MA5 27138 這類的均線數值
+    .replace(/SMA\d+\s*\d+/gi, '') // 移除 SMA
+    .replace(/量\s*\d+/g, '') // 移除 "量 5500"
+    .replace(/\d{4}\/\d{1,2}\/?\d{0,2}/g, '') // 移除日期
+    .replace(/\d+\s*[:：]\s*\d+(\.\d+)?/g, '') // 移除盈虧比 (1:10)
 
-  // --- D. 提取數值邏輯 ---
+  // --- C. 核心邏輯：先抓「支撐區間」作為錨點 (Anchor) ---
 
-  // 1. 優先抓取「支撐區間」(特徵：兩個數字中間有減號)
-  // Regex: 數字(含小數) - 數字(含小數)
-  const rangeRegex = /(\d{2,}(\.\d+)?\s*[-]\s*\d{2,}(\.\d+)?)/
+  // 找尋 "數字-數字" 的模式 (例如 68-70 或 185-190)
+  const rangeRegex = /(\d{2,}(\.\d+)?)\s*[-]\s*(\d{2,}(\.\d+)?)/
   const supportMatch = content.match(rangeRegex)
 
+  let anchorPrice = 0 // 用來判斷其他數字合不合理的基準價
+
   if (supportMatch) {
-    result.support = supportMatch[0].replace(/\s/g, '') // 移除中間空白
-    // 抓到後，從內容中移除這段文字，避免後續重複抓取
+    result.support = supportMatch[0].replace(/\s/g, '') // 68-70
+
+    // 計算平均價作為錨點 (68+70)/2 = 69
+    const min = parseFloat(supportMatch[1])
+    const max = parseFloat(supportMatch[3])
+    anchorPrice = (min + max) / 2
+
+    // 從內容中移除這段，避免重複抓取
     content = content.replace(supportMatch[0], '')
   }
 
-  // 2. 抓取剩餘的所有「獨立數字」
-  // Regex: 抓取任何大於 10 的數字 (過濾掉個位數雜訊，如 '1' 或 '4')
-  // 這裡假設剩下的數字順序依序為：短線 -> 波段 -> 換股
-  const allNumbers = []
+  // --- D. 抓取剩餘數字並進行「合理性過濾」 ---
+
+  const potentialNumbers = []
   const numRegex = /(\d{2,}(\.\d+)?)/g
   let match
+
   while ((match = numRegex.exec(content)) !== null) {
     const val = parseFloat(match[0])
-    // 額外過濾：股價通常不會是年份 (如 2025)，除非是台積電
-    // 如果日期 Regex 沒濾乾淨，這裡做最後一道防線
-    if (val !== 2024 && val !== 2025 && val !== 2026) {
-      allNumbers.push(match[0])
+
+    // 過濾 1: 必須不是年份
+    if (val > 2023 && val < 2030) continue
+
+    // 過濾 2 (關鍵): 如果有錨點，檢查數值是否合理
+    // 邏輯：目標價通常不會是股價的 100 倍 (成交量)，也不會是 1/10 (盈虧比)
+    // 我們設定範圍：錨點的 0.3倍 ~ 5倍 (保留這區間內的數字)
+    if (anchorPrice > 0) {
+      if (val > anchorPrice * 5 || val < anchorPrice * 0.3) {
+        // 數值差異過大，視為雜訊 (成交量、R/R、均線)
+        continue
+      }
+    } else {
+      // 如果沒抓到支撐區間 (沒錨點)，則用「防呆上限」
+      // 假設大於 5000 通常是成交量 (除非是股王)，暫時過濾
+      if (val > 5000) continue
     }
+
+    potentialNumbers.push(match[0])
   }
 
-  // --- E. 填入結果 ---
-
-  // 如果剛剛沒抓到區間，就勉強用第一個數字當支撐 (防呆)
-  if (!result.support && allNumbers.length > 0) {
-    result.support = allNumbers.shift()
+  // --- E. 依序填入 ---
+  // 如果前面沒抓到支撐，就拿第一個合格數字當支撐
+  if (!result.support && potentialNumbers.length > 0) {
+    result.support = potentialNumbers.shift()
+    // 更新錨點供後續參考 (雖然這時候沒用到)
+    anchorPrice = parseFloat(result.support)
   }
 
-  // 依序填入剩餘的目標價
-  if (allNumbers.length >= 1) result.shortTermProfit = allNumbers[0]
-  if (allNumbers.length >= 2) result.waveProfit = allNumbers[1]
-  if (allNumbers.length >= 3) result.swapRef = allNumbers[2]
+  if (potentialNumbers.length >= 1) result.shortTermProfit = potentialNumbers[0]
+  if (potentialNumbers.length >= 2) result.waveProfit = potentialNumbers[1]
+  if (potentialNumbers.length >= 3) result.swapRef = potentialNumbers[2]
 
   return result
 }
