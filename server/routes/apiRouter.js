@@ -26,23 +26,77 @@ function saveStocks(data) {
   fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8')
 }
 
-// --- 證交所爬蟲邏輯 ---
-async function fetchStockData(stockIds) {
+// --- 快取系統 ---
+const stockPriceCache = new Map()
+const CACHE_TTL = 30000 // 30秒快取時間
+let lastRequestTime = 0
+const MIN_REQUEST_INTERVAL = 3000 // 最小請求間隔 3秒
+
+// 清理過期快取
+function cleanExpiredCache() {
+  const now = Date.now()
+  for (const [key, value] of stockPriceCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL) {
+      stockPriceCache.delete(key)
+    }
+  }
+}
+
+// 定期清理快取（每分鐘）
+setInterval(cleanExpiredCache, 60000)
+
+// 判斷是否為交易時段
+function isTradingHours() {
+  const now = new Date()
+  const taipei = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }))
+  const day = taipei.getDay() // 0=週日, 6=週六
+  const hour = taipei.getHours()
+  const minute = taipei.getMinutes()
+  const time = hour * 60 + minute // 轉換為分鐘數
+
+  // 週末不交易
+  if (day === 0 || day === 6) return false
+
+  // 交易時間：09:00-13:30 (540-810分鐘)
+  const marketOpen = 9 * 60 // 09:00
+  const marketClose = 13 * 60 + 30 // 13:30
+
+  return time >= marketOpen && time <= marketClose
+}
+
+// 取得建議的快取時間（根據交易時段）
+function getRecommendedCacheTTL() {
+  if (isTradingHours()) {
+    return 5000 // 交易時段：5秒
+  } else {
+    const now = new Date()
+    const taipei = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }))
+    const hour = taipei.getHours()
+    
+    // 盤後時段 13:30-18:00：2分鐘
+    if (hour >= 13 && hour < 18) {
+      return 120000
+    }
+    // 非交易時段：5分鐘
+    return 300000
+  }
+}
+
+// --- 證交所爬蟲邏輯（加入錯誤重試）---
+async function fetchStockDataWithRetry(stockIds, retryCount = 0) {
   const baseUrl = 'https://mis.twse.com.tw/stock/api/getStockInfo.jsp'
+  const MAX_RETRIES = 2
+  const RETRY_DELAY = 1000 // 1秒
 
   // 1️⃣ 組合查詢字串
-  // 由於不知道是上市還是上櫃，策略是：針對每個 ID 同時查詢 tse 和 otc
-  // 例如傳入 ['2330', '0050'] => "tse_2330.tw|otc_2330.tw|tse_0050.tw|otc_0050.tw"
   const queryParams = stockIds.map((id) => `tse_${id}.tw|otc_${id}.tw`).join('|')
-
   const url = `${baseUrl}?json=1&ex_ch=${queryParams}&_=${Date.now()}`
 
   try {
     const response = await axios.get(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      timeout: 10000, // 批量查詢稍微拉長 timeout
+      timeout: 10000,
     })
-
     const msgArray = response.data.msgArray
 
     if (!msgArray || msgArray.length === 0) {
@@ -51,40 +105,90 @@ async function fetchStockData(stockIds) {
     }
 
     // 2️⃣ 處理回傳資料
-    // filter: 濾掉查無資料的項目 (有些代號可能在上市查不到但在上櫃有，反之亦然，API 會回傳空或無效的物件)
     const results = msgArray
-      .filter((msg) => msg.c && msg.c !== '' && msg.n && msg.n !== '') // 確保代號跟名稱存在
+      .filter((msg) => msg.c && msg.c !== '' && msg.n && msg.n !== '')
       .map((msg) => {
-        // 價格判斷邏輯 (維持原本邏輯)
-        let currentPrice = msg.z // 當盤成交價
+        let currentPrice = msg.z
 
         if (currentPrice === '-') {
-          // 如果沒有成交價，嘗試從委買價或委賣價取得
           if (msg.b && msg.b !== '-') {
-            currentPrice = msg.b.split('_')[0] // 最佳買價
+            currentPrice = msg.b.split('_')[0]
           } else if (msg.a && msg.a !== '-') {
-            currentPrice = msg.a.split('_')[0] // 最佳賣價
+            currentPrice = msg.a.split('_')[0]
           } else {
-            currentPrice = msg.y // 使用昨收價
+            currentPrice = msg.y
           }
         }
 
         return {
-          symbol: msg.c, // 股票代號
-          name: msg.n, // 公司簡稱
-          currentPrice: currentPrice, // 處理過後的價格
-          yesterdayClose: msg.y, // 昨收
-          volume: msg.v, // 累積成交量
-          time: msg.t, // 最近成交時刻
-          fullKey: msg.ch, // 除錯用：回傳這是 tse 還是 otc (例如 '2330.tw')
+          symbol: msg.c,
+          name: msg.n,
+          currentPrice: currentPrice,
+          yesterdayClose: msg.y,
+          volume: msg.v,
+          time: msg.t,
+          fullKey: msg.ch,
         }
       })
 
     return results
   } catch (error) {
-    console.error(`❌ 批量查詢失敗`, error.message)
+    console.error(`❌ 批量查詢失敗 (嘗試 ${retryCount + 1}/${MAX_RETRIES + 1})`, error.message)
+    
+    // 如果還有重試次數，則延遲後重試
+    if (retryCount < MAX_RETRIES) {
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (retryCount + 1)))
+      return fetchStockDataWithRetry(stockIds, retryCount + 1)
+    }
+    
     return []
   }
+}
+
+// 主要的股票數據獲取函數（帶快取和節流）
+async function fetchStockData(stockIds) {
+  if (!stockIds || stockIds.length === 0) return []
+
+  // 生成快取鍵（排序後確保一致性）
+  const cacheKey = stockIds.sort().join(',')
+  
+  // 1️⃣ 檢查快取
+  const cached = stockPriceCache.get(cacheKey)
+  const recommendedTTL = getRecommendedCacheTTL()
+  
+  if (cached && Date.now() - cached.timestamp < recommendedTTL) {
+    console.log(`✅ 使用快取數據 (剩餘 ${Math.round((recommendedTTL - (Date.now() - cached.timestamp)) / 1000)}秒)`)
+    return cached.data
+  }
+
+  // 2️⃣ 請求節流保護
+  const now = Date.now()
+  const timeSinceLastRequest = now - lastRequestTime
+  
+  if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+    const waitTime = MIN_REQUEST_INTERVAL - timeSinceLastRequest
+    console.log(`⏱️ 請求節流：等待 ${waitTime}ms`)
+    await new Promise(resolve => setTimeout(resolve, waitTime))
+  }
+
+  // 3️⃣ 呼叫 API（帶重試機制）
+  console.log(`🌐 呼叫證交所 API (${stockIds.length} 支股票)`)
+  lastRequestTime = Date.now()
+  const data = await fetchStockDataWithRetry(stockIds)
+
+  // 4️⃣ 存入快取
+  stockPriceCache.set(cacheKey, {
+    data,
+    timestamp: Date.now()
+  })
+
+  // 5️⃣ 限制快取大小
+  if (stockPriceCache.size > 50) {
+    const firstKey = stockPriceCache.keys().next().value
+    stockPriceCache.delete(firstKey)
+  }
+
+  return data
 } // --- API 路由 ---
 
 // 新增：專門用來獲取股價的 API
@@ -102,6 +206,31 @@ router.post('/stock-prices', async (req, res) => {
     console.error('Fetch Stock Prices Error:', e)
     res.status(500).json({ error: 'Server Error' })
   }
+})
+
+// 新增：系統狀態監控 API
+router.get('/system-status', (req, res) => {
+  const cacheStats = {
+    cacheSize: stockPriceCache.size,
+    cacheKeys: Array.from(stockPriceCache.keys()),
+    cacheDetails: Array.from(stockPriceCache.entries()).map(([key, value]) => ({
+      key,
+      age: Math.round((Date.now() - value.timestamp) / 1000),
+      itemCount: value.data.length
+    }))
+  }
+
+  const tradingStatus = {
+    isTradingHours: isTradingHours(),
+    recommendedCacheTTL: getRecommendedCacheTTL(),
+    timeSinceLastRequest: lastRequestTime ? Date.now() - lastRequestTime : null
+  }
+
+  res.json({
+    cache: cacheStats,
+    trading: tradingStatus,
+    timestamp: new Date().toISOString()
+  })
 })
 
 router.get('/dashboard', async (req, res) => {

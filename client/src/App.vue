@@ -227,6 +227,63 @@ const toggleStealth = () => {
   localStorage.setItem('stealth-mode', isStealth.value ? '1' : '0')
 }
 
+// --- 智慧刷新邏輯 ---
+
+// 判斷是否為交易時段
+const isTradingHours = () => {
+  const now = new Date()
+  const day = now.getDay() // 0=週日, 6=週六
+  const hour = now.getHours()
+  const minute = now.getMinutes()
+  const time = hour * 60 + minute
+
+  // 週末不交易
+  if (day === 0 || day === 6) return false
+
+  // 交易時間：09:00-13:30
+  const marketOpen = 9 * 60
+  const marketClose = 13 * 60 + 30
+
+  return time >= marketOpen && time <= marketClose
+}
+
+// 取得建議的刷新間隔（毫秒）
+const getRefreshInterval = () => {
+  if (isTradingHours()) {
+    return 5000 // 交易時段：5秒
+  } else {
+    const now = new Date()
+    const hour = now.getHours()
+    
+    // 盤後時段 13:30-18:00：2分鐘
+    if (hour >= 13 && hour < 18) {
+      return 120000
+    }
+    // 非交易時段：5分鐘
+    return 300000
+  }
+}
+
+// 動態調整刷新間隔
+const setupDynamicRefresh = () => {
+  const updateTimer = () => {
+    if (timer) {
+      clearInterval(timer)
+    }
+    
+    const interval = getRefreshInterval()
+    const intervalText = interval >= 60000 ? `${interval / 60000}分鐘` : `${interval / 1000}秒`
+    console.log(`📡 刷新間隔: ${intervalText} (${isTradingHours() ? '交易時段' : '非交易時段'})`)
+    
+    timer = setInterval(refreshAll, interval)
+  }
+
+  updateTimer()
+  
+  // 每分鐘檢查一次是否需要調整刷新間隔
+  setInterval(updateTimer, 60000)
+}
+
 // --- Lifecycle ---
 
 onMounted(() => {
@@ -234,8 +291,8 @@ onMounted(() => {
 
   refreshAll()
 
-  // 每 15 秒更新一次（稍微拉長一點點，降低伺服器負擔）
-  timer = setInterval(refreshAll, 15000)
+  // 使用智慧刷新邏輯
+  setupDynamicRefresh()
 })
 
 onUnmounted(() => {
