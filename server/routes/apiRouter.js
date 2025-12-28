@@ -29,36 +29,33 @@ function saveStocks(data) {
 // --- 證交所爬蟲邏輯 ---
 async function fetchStockData(stockIds) {
   const baseUrl = 'https://mis.twse.com.tw/stock/api/getStockInfo.jsp'
-  const results = []
 
-  // 對每個股票代號進行查詢
-  for (const id of stockIds) {
-    try {
-      // 1️⃣ 先嘗試上市 (tse)
-      let ex_ch = `tse_${id}.tw`
-      let url = `${baseUrl}?json=1&ex_ch=${ex_ch}&_=${Date.now()}`
+  // 1️⃣ 組合查詢字串
+  // 由於不知道是上市還是上櫃，策略是：針對每個 ID 同時查詢 tse 和 otc
+  // 例如傳入 ['2330', '0050'] => "tse_2330.tw|otc_2330.tw|tse_0050.tw|otc_0050.tw"
+  const queryParams = stockIds.map((id) => `tse_${id}.tw|otc_${id}.tw`).join('|')
 
-      let response = await axios.get(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-        timeout: 6000,
-      })
+  const url = `${baseUrl}?json=1&ex_ch=${queryParams}&_=${Date.now()}`
 
-      // 2️⃣ 如果 msgArray 是空的或股票代號為空，嘗試上櫃 (otc)
-      if (!response.data.msgArray || response.data.msgArray.length === 0 || !response.data.msgArray[0].c || response.data.msgArray[0].c === '') {
-        ex_ch = `otc_${id}.tw`
-        url = `${baseUrl}?json=1&ex_ch=${ex_ch}&_=${Date.now()}`
+  try {
+    const response = await axios.get(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      timeout: 10000, // 批量查詢稍微拉長 timeout
+    })
 
-        response = await axios.get(url, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-          timeout: 6000,
-        })
-      }
+    const msgArray = response.data.msgArray
 
-      // 3️⃣ 解析資料（檢查 msgArray 存在且股票代號不為空）
-      if (response.data.msgArray && response.data.msgArray.length > 0 && response.data.msgArray[0].c && response.data.msgArray[0].c !== '') {
-        const msg = response.data.msgArray[0]
+    if (!msgArray || msgArray.length === 0) {
+      console.log('⚠️ API 回傳空資料')
+      return []
+    }
 
-        // 價格判斷邏輯
+    // 2️⃣ 處理回傳資料
+    // filter: 濾掉查無資料的項目 (有些代號可能在上市查不到但在上櫃有，反之亦然，API 會回傳空或無效的物件)
+    const results = msgArray
+      .filter((msg) => msg.c && msg.c !== '' && msg.n && msg.n !== '') // 確保代號跟名稱存在
+      .map((msg) => {
+        // 價格判斷邏輯 (維持原本邏輯)
         let currentPrice = msg.z // 當盤成交價
 
         if (currentPrice === '-') {
@@ -72,25 +69,23 @@ async function fetchStockData(stockIds) {
           }
         }
 
-        results.push({
+        return {
           symbol: msg.c, // 股票代號
           name: msg.n, // 公司簡稱
           currentPrice: currentPrice, // 處理過後的價格
           yesterdayClose: msg.y, // 昨收
           volume: msg.v, // 累積成交量
           time: msg.t, // 最近成交時刻
-        })
-      } else {
-        console.log(`⚠️ ${id}: 上市和上櫃都查不到資料`)
-      }
-    } catch (error) {
-      console.error(`❌ ${id}: 查詢失敗`, error.message)
-    }
-  }
+          fullKey: msg.ch, // 除錯用：回傳這是 tse 還是 otc (例如 '2330.tw')
+        }
+      })
 
-  return results
-}
-// --- API 路由 ---
+    return results
+  } catch (error) {
+    console.error(`❌ 批量查詢失敗`, error.message)
+    return []
+  }
+} // --- API 路由 ---
 
 // 新增：專門用來獲取股價的 API
 router.post('/stock-prices', async (req, res) => {
