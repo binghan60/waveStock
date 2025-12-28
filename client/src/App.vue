@@ -14,10 +14,86 @@ const lastUpdated = ref('')
 const isStealth = ref(false)
 let timer = null
 
+// --- 置頂功能 ---
+
+// 置頂清單的響應式狀態
+const pinnedList = ref([])
+
+// 從 localStorage 載入置頂清單
+const loadPinnedStocks = () => {
+  try {
+    const stored = localStorage.getItem('pinned-stocks')
+    pinnedList.value = stored ? JSON.parse(stored) : []
+  } catch (e) {
+    console.error('Failed to load pinned stocks from localStorage:', e)
+    pinnedList.value = []
+  }
+}
+
+// 儲存置頂清單到 localStorage
+const savePinnedStocks = () => {
+  try {
+    localStorage.setItem('pinned-stocks', JSON.stringify(pinnedList.value))
+    console.log('💾 置頂清單已儲存:', pinnedList.value)
+  } catch (e) {
+    console.error('Failed to save pinned stocks to localStorage:', e)
+  }
+}
+
+// 切換置頂狀態
+const togglePin = (symbol) => {
+  const index = pinnedList.value.indexOf(symbol)
+  
+  if (index > -1) {
+    // 取消置頂
+    pinnedList.value.splice(index, 1)
+    console.log(`📍 取消置頂: ${symbol}`)
+  } else {
+    // 加入置頂
+    pinnedList.value.push(symbol)
+    console.log(`📌 置頂: ${symbol}`)
+  }
+  
+  savePinnedStocks()
+}
+
 // --- Computed: 自動分類邏輯 ---
 
 const manualStocks = computed(() => {
   return stocks.value.filter((item) => item.type === 'manual' || !item.type)
+})
+
+// 置頂股票清單（合併手動新增和辨識股票）
+const pinnedStocks = computed(() => {
+  // 從手動新增的股票中篩選置頂的
+  const pinnedManual = manualStocks.value
+    .filter(stock => pinnedList.value.includes(stock.symbol))
+    .map(stock => ({ ...stock, isPinned: true, source: 'manual' }))
+  
+  // 從辨識股票中篩選置頂的
+  const pinnedRecognized = recognizedStocks.value
+    .filter(stock => pinnedList.value.includes(stock.code))
+    .map(stock => ({ 
+      ...stock, 
+      symbol: stock.code, // 統一使用 symbol 欄位
+      isPinned: true, 
+      source: 'recognized' 
+    }))
+  
+  return [...pinnedManual, ...pinnedRecognized]
+})
+
+// 非置頂的手動股票清單
+const unpinnedStocks = computed(() => {
+  return manualStocks.value
+    .filter(stock => !pinnedList.value.includes(stock.symbol))
+    .map(stock => ({ ...stock, isPinned: false }))
+})
+
+// 非置頂的辨識股票清單
+const unpinnedRecognizedStocks = computed(() => {
+  return recognizedStocks.value
+    .filter(stock => !pinnedList.value.includes(stock.code))
 })
 
 // --- API 互動 ---
@@ -99,13 +175,13 @@ const fetchData = async () => {
       }
     })
 
-    // 合併辨識股票的自選狀態與即時價格
+    // 合併辨識股票的即時價格與置頂狀態
     if (res.data.recognizedStocks) {
       recognizedStocks.value = res.data.recognizedStocks.map(stock => {
         const priceData = prices.find((p) => p.symbol === stock.code)
         return {
           ...stock,
-          isFavorite: favorites.includes(stock._id),
+          isPinned: pinnedList.value.includes(stock.code),
           market: priceData || null,
         }
       })
@@ -198,29 +274,6 @@ const removeRecognizedStock = async (id) => {
   }
 }
 
-const toggleFavorite = (id) => {
-  const stock = recognizedStocks.value.find((s) => s._id === id)
-  if (!stock) return
-
-  // 切換自選狀態
-  stock.isFavorite = !stock.isFavorite
-
-  // 更新 localStorage
-  const favorites = getFavorites()
-  if (stock.isFavorite) {
-    // 加入自選
-    if (!favorites.includes(id)) {
-      favorites.push(id)
-    }
-  } else {
-    // 移除自選
-    const index = favorites.indexOf(id)
-    if (index > -1) {
-      favorites.splice(index, 1)
-    }
-  }
-  saveFavorites(favorites)
-}
 
 const toggleStealth = () => {
   isStealth.value = !isStealth.value
@@ -288,6 +341,9 @@ const setupDynamicRefresh = () => {
 
 onMounted(() => {
   isStealth.value = localStorage.getItem('stealth-mode') === '1'
+  
+  // 載入置頂清單
+  loadPinnedStocks()
 
   refreshAll()
 
@@ -353,6 +409,46 @@ onUnmounted(() => {
         </div>
       </header>
 
+      <!-- 置頂區域 -->
+      <section v-if="pinnedStocks.length > 0" class="mb-14">
+        <div class="flex items-center gap-3 mb-6 pl-1">
+          <h2 class="text-xl font-bold tracking-tight">
+            {{ isStealth ? 'PINNED_WATCHLIST' : '📌 置頂監控' }}
+          </h2>
+          <span
+            class="px-2 py-0.5 rounded text-[10px] font-mono font-bold"
+            :class="
+              isStealth
+                ? 'bg-yellow-100 text-yellow-700'
+                : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+            "
+          >
+            PINNED: {{ pinnedStocks.length }}
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <template v-for="item in pinnedStocks" :key="item._id || item.id">
+            <!-- 手動新增的股票 -->
+            <StockCard
+              v-if="item.source === 'manual'"
+              :item="item"
+              :is-stealth="isStealth"
+              @remove="removeStock"
+              @togglePin="togglePin"
+            />
+            <!-- 辨識的股票 -->
+            <RecognizedStockCard
+              v-else-if="item.source === 'recognized'"
+              :item="item"
+              :is-stealth="isStealth"
+              @remove="removeRecognizedStock"
+              @togglePin="togglePin"
+            />
+          </template>
+        </div>
+      </section>
+
       <section class="mb-14">
         <div class="flex items-center justify-between mb-6 pl-1">
           <div class="flex items-center gap-3">
@@ -367,13 +463,13 @@ onUnmounted(() => {
                   : 'bg-green-500/10 text-green-400 border border-green-500/20'
               "
             >
-              COUNT: {{ recognizedStocks.length }}
+              COUNT: {{ unpinnedRecognizedStocks.length }}
             </span>
           </div>
         </div>
 
         <div
-          v-if="recognizedStocks.length === 0"
+          v-if="unpinnedRecognizedStocks.length === 0"
           class="py-12 text-center border-2 border-dashed rounded-2xl transition-colors"
           :class="isStealth ? 'border-slate-200 text-slate-400' : 'border-zinc-800 text-zinc-600'"
         >
@@ -382,12 +478,12 @@ onUnmounted(() => {
 
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           <RecognizedStockCard
-            v-for="item in recognizedStocks"
+            v-for="item in unpinnedRecognizedStocks"
             :key="item._id"
             :item="item"
             :is-stealth="isStealth"
             @remove="removeRecognizedStock"
-            @toggle-favorite="toggleFavorite"
+            @togglePin="togglePin"
           />
         </div>
       </section>
@@ -421,38 +517,41 @@ onUnmounted(() => {
       </div>
 
       <section>
-        <div class="flex items-center gap-3 mb-6 pl-1">
-          <h2 class="text-xl font-bold tracking-tight">
-            {{ isStealth ? 'USER_WATCHLIST_LOCAL' : '個人自選清單' }}
-          </h2>
-          <span
-            class="px-2 py-0.5 rounded text-[10px] font-mono font-bold"
-            :class="
-              isStealth
-                ? 'bg-slate-200 text-slate-500'
-                : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-            "
+        <div>
+          <div class="flex items-center gap-3 mb-6 pl-1">
+            <h2 class="text-xl font-bold tracking-tight">
+              {{ isStealth ? 'USER_WATCHLIST_LOCAL' : '個人自選清單' }}
+            </h2>
+            <span
+              class="px-2 py-0.5 rounded text-[10px] font-mono font-bold"
+              :class="
+                isStealth
+                  ? 'bg-slate-200 text-slate-500'
+                  : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+              "
+            >
+              ITEMS: {{ unpinnedStocks.length }}
+            </span>
+          </div>
+
+          <div
+            v-if="unpinnedStocks.length === 0 && pinnedStocks.length === 0"
+            class="py-12 text-center border-2 border-dashed rounded-2xl"
+            :class="isStealth ? 'border-slate-200' : 'border-zinc-800'"
           >
-            ITEMS: {{ manualStocks.length }}
-          </span>
-        </div>
+            <p class="text-sm opacity-40">Watchlist is empty.</p>
+          </div>
 
-        <div
-          v-if="manualStocks.length === 0"
-          class="py-12 text-center border-2 border-dashed rounded-2xl"
-          :class="isStealth ? 'border-slate-200' : 'border-zinc-800'"
-        >
-          <p class="text-sm opacity-40">Watchlist is empty.</p>
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          <StockCard
-            v-for="item in manualStocks"
-            :key="item._id || item.id"
-            :item="item"
-            :is-stealth="isStealth"
-            @remove="removeStock"
-          />
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <StockCard
+              v-for="item in unpinnedStocks"
+              :key="item._id || item.id"
+              :item="item"
+              :is-stealth="isStealth"
+              @remove="removeStock"
+              @togglePin="togglePin"
+            />
+          </div>
         </div>
       </section>
     </div>
