@@ -99,7 +99,7 @@ async function handleImageMessage(event, client) {
       // 查詢 30 天內是否已經有相同的股票代號
       const existingStock = await RecognizedStock.findOne({
         code: stockData.code,
-        createdAt: { $gte: thirtyDaysAgo }
+        createdAt: { $gte: thirtyDaysAgo },
       }).sort({ createdAt: -1 })
 
       if (existingStock) {
@@ -108,7 +108,7 @@ async function handleImageMessage(event, client) {
         existingStock.waveProfit = stockData.waveProfit
         existingStock.swapRef = stockData.swapRef
         existingStock.updatedAt = new Date()
-        
+
         await existingStock.save()
       } else {
         // 超過 30 天或沒有該股票，新增一筆
@@ -121,7 +121,7 @@ async function handleImageMessage(event, client) {
           source: 'system',
           isFavorite: false,
         })
-        
+
         await recognizedStock.save()
         console.log('✅ 股票資料已新增到資料庫:', stockData.code)
       }
@@ -149,73 +149,76 @@ https://wave-stock.vercel.app/
 }
 
 function parseStockData(text) {
-  // 1. 基本清理：移除空白、修正錯字
-  const cleanText = text.replace(/O/g, '0').replace(/o/g, '0').replace(/l/g, '1').replace(/I/g, '1').replace(/\s+/g, '\n') // 把所有空白變成換行，確保分行正確
-
-  // 將文字轉成陣列，移除空行
-  const lines = cleanText
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l)
+  // 1. 基本字元清理 (統一符號)
+  const cleanText = text
+    .replace(/O/g, '0')
+    .replace(/o/g, '0')
+    .replace(/l/g, '1')
+    .replace(/I/g, '1')
+    .replace(/~/g, '-') // 波浪號轉減號
+    .replace(/—/g, '-') // 長破折號轉減號
+    .replace(/\s+/g, '\n') // 統一換行
 
   const result = {}
 
-  // --- 1. 抓股票代號 (全域搜尋) ---
-  const codeMatch = text.match(/(\d{4})/)
+  // --- A. 抓取股票代號 (全域搜尋) ---
+  const codeMatch = cleanText.match(/(\d{4})/)
   if (codeMatch) result.code = codeMatch[1]
 
-  // --- 2. 抓取數值 (雙欄排版策略) ---
+  // --- B. 鎖定「操作策略」區塊 ---
+  // 我們只看 'STRATEGY' 或 '操作策略' 之後的文字，避免抓到上方的 SMA、收盤價或日期
+  let strategyIndex = cleanText.search(/STRATEGY|操作策略|支撐區間/i)
+  if (strategyIndex === -1) strategyIndex = 0 // 找不到就全搜
 
-  // 我們知道圖片的順序是固定的：支撐區間 -> 短線停利 -> 波段停利 -> 換股參考
-  
-  // 步驟 A: 找到「支撐區間」或「支撐」這一行在哪裡
-  const supportLabelIndex = lines.findIndex((l) => /支撐/.test(l))
+  let content = cleanText.substring(strategyIndex)
 
-  if (supportLabelIndex !== -1) {
-    // 步驟 B: 從「支撐」的下一行開始，依序抓取數值
-    const foundValues = []
+  // --- C. 清除特定雜訊 (這是防呆的關鍵) ---
+  // 1. 移除日期格式 (如 2025/12/04, 2025/124)，避免被當成股價
+  content = content.replace(/\d{4}\/\d{1,2}\/?\d{0,2}/g, '')
+  // 2. 移除盈虧比 (如 1:4.5)，避免被切成 1 和 4.5
+  content = content.replace(/\d+\s*[:：]\s*\d+(\.\d+)?/g, '')
+  // 3. 移除成交量 (如 34051張)
+  content = content.replace(/\d+張/g, '')
 
-    for (let i = supportLabelIndex + 1; i < lines.length; i++) {
-      const line = lines[i]
+  // --- D. 提取數值邏輯 ---
 
-      // 檢查是否為數字或範圍 (例如 "177", "210.5", "245-250")
-      // 排除日期 ("2025/...")
-      if (/^\d+(\.\d+)?(-\d+(\.\d+)?)?$/.test(line) && !/\//.test(line)) {
-        foundValues.push(line)
-      }
+  // 1. 優先抓取「支撐區間」(特徵：兩個數字中間有減號)
+  // Regex: 數字(含小數) - 數字(含小數)
+  const rangeRegex = /(\d{2,}(\.\d+)?\s*[-]\s*\d{2,}(\.\d+)?)/
+  const supportMatch = content.match(rangeRegex)
 
-      // 如果已經抓到 4 個值，就停止掃描
-      if (foundValues.length >= 4) break
-    }
+  if (supportMatch) {
+    result.support = supportMatch[0].replace(/\s/g, '') // 移除中間空白
+    // 抓到後，從內容中移除這段文字，避免後續重複抓取
+    content = content.replace(supportMatch[0], '')
+  }
 
-    // 步驟 C: 依序填入 (順序：支撐區間 -> 短線 -> 波段 -> 換股)
-    if (foundValues.length >= 4) {
-      result.support = foundValues[0] // 可能是 "177" 或 "245-250"
-      result.shortTermProfit = foundValues[1] // 309
-      result.waveProfit = foundValues[2] // 396
-      result.swapRef = foundValues[3] // 230
-
-      return result // 成功抓取，直接回傳
+  // 2. 抓取剩餘的所有「獨立數字」
+  // Regex: 抓取任何大於 10 的數字 (過濾掉個位數雜訊，如 '1' 或 '4')
+  // 這裡假設剩下的數字順序依序為：短線 -> 波段 -> 換股
+  const allNumbers = []
+  const numRegex = /(\d{2,}(\.\d+)?)/g
+  let match
+  while ((match = numRegex.exec(content)) !== null) {
+    const val = parseFloat(match[0])
+    // 額外過濾：股價通常不會是年份 (如 2025)，除非是台積電
+    // 如果日期 Regex 沒濾乾淨，這裡做最後一道防線
+    if (val !== 2024 && val !== 2025 && val !== 2026) {
+      allNumbers.push(match[0])
     }
   }
 
-  // --- 3. (備用方案) 如果上面的方法失敗，嘗試舊的「逐行抓取」邏輯 ---
-  // 這預防萬一 OCR 讀取順序變回「標題:數值」的形式
-  console.log('⚠️ 雙欄模式未命中，嘗試備用邏輯...')
+  // --- E. 填入結果 ---
 
-  // (這裡保留簡單的備用 regex，以防萬一)
-  // 支撐可能是範圍 (例如 245-250)
-  const supportMatch = text.match(/支[^0-9\n]*(\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?)/)
-  if (supportMatch) result.support = supportMatch[1]
+  // 如果剛剛沒抓到區間，就勉強用第一個數字當支撐 (防呆)
+  if (!result.support && allNumbers.length > 0) {
+    result.support = allNumbers.shift()
+  }
 
-  const shortMatch = text.match(/[短矩][^0-9\n]*(\d+(?:\.\d+)?)/)
-  if (shortMatch) result.shortTermProfit = shortMatch[1]
-
-  const waveMatch = text.match(/波[^0-9\n]*(\d+(?:\.\d+)?)/)
-  if (waveMatch) result.waveProfit = waveMatch[1]
-
-  const swapMatch = text.match(/[換挽换][^0-9\n]*(\d+(?:\.\d+)?)/)
-  if (swapMatch) result.swapRef = swapMatch[1]
+  // 依序填入剩餘的目標價
+  if (allNumbers.length >= 1) result.shortTermProfit = allNumbers[0]
+  if (allNumbers.length >= 2) result.waveProfit = allNumbers[1]
+  if (allNumbers.length >= 3) result.swapRef = allNumbers[2]
 
   return result
 }
