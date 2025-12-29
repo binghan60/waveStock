@@ -28,6 +28,16 @@ const recognizedStockSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // 傳入當下的股價
+    currentPrice: {
+      type: String,
+      default: null,
+    },
+    // 是否成功（預留欄位，先給空值）
+    isSuccess: {
+      type: Boolean,
+      default: null,
+    },
     // 來源類型：'user' (使用者自選) 或 'system' (系統推薦)
     source: {
       type: String,
@@ -41,7 +51,7 @@ const recognizedStockSchema = new mongoose.Schema(
     },
   },
   {
-    timestamps: true, // 自動加入 createdAt 和 updatedAt
+    timestamps: true, // 自動加入 createdAt 和 updatedAt (記錄傳入時間)
   }
 )
 

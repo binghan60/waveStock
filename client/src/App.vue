@@ -98,6 +98,29 @@ const unpinnedRecognizedStocks = computed(() => {
   return recognizedStocks.value.filter((stock) => !pinnedList.value.includes(stock.code))
 })
 
+// --- 股價格式化函數 ---
+// 根據股價區間動態調整顯示位數
+const formatStockPrice = (price) => {
+  if (!price || price === '-') return '-'
+
+  const numPrice = parseFloat(price)
+  if (isNaN(numPrice)) return price
+
+  if (numPrice < 10) {
+    return numPrice.toFixed(2) // < 10: 顯示 2 位小數
+  } else if (numPrice < 50) {
+    return numPrice.toFixed(2) // 10-50: 顯示 2 位小數
+  } else if (numPrice < 100) {
+    return numPrice.toFixed(1) // 50-100: 顯示 1 位小數
+  } else if (numPrice < 500) {
+    return numPrice.toFixed(1) // 100-500: 顯示 1 位小數
+  } else if (numPrice < 1000) {
+    return numPrice.toFixed(0) // 500-1000: 顯示整數
+  } else {
+    return numPrice.toFixed(0) // > 1000: 顯示整數
+  }
+}
+
 // --- API 互動 ---
 // 從 localStorage 獲取自選清單（辨識股票的星星標記）
 const getFavorites = () => {
@@ -600,16 +623,323 @@ onUnmounted(() => {
           </section>
         </div>
 
-        <!-- Data Table -->
+        <!-- Data Table / 戰果榜 -->
         <div v-if="activeTab === 'dataTable'">
+          <div class="mb-6">
+            <div class="flex items-center gap-3 mb-4">
+              <h2 class="text-2xl font-bold tracking-tight">
+                {{ isStealth ? 'RECOGNITION_RECORDS' : '📊 圖片辨識戰果榜' }}
+              </h2>
+              <span
+                class="px-3 py-1 rounded-full text-xs font-mono font-bold"
+                :class="
+                  isStealth
+                    ? 'bg-slate-200 text-slate-600'
+                    : 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-blue-400 border border-blue-500/30'
+                "
+              >
+                總計: {{ recognizedStocks.length }} 筆
+              </span>
+            </div>
+            <p class="text-sm opacity-60" :class="isStealth ? 'text-slate-500' : 'text-zinc-400'">
+              所有透過圖片辨識的股票資料，包含傳入時的股價與目標價位
+            </p>
+          </div>
+
+          <!-- 空狀態 -->
           <div
-            class="py-12 text-center border-2 border-dashed rounded-2xl transition-colors"
+            v-if="recognizedStocks.length === 0"
+            class="py-20 text-center border-2 border-dashed rounded-2xl transition-colors"
             :class="isStealth ? 'border-slate-200 text-slate-400' : 'border-zinc-800 text-zinc-600'"
           >
-            <h2 class="text-xl font-bold tracking-tight mb-4">
-              {{ isStealth ? 'DATA_GRID' : 'Data 表格' }}
-            </h2>
-            <p class="text-sm font-medium">此區域將用於顯示詳細的數據表格。</p>
+            <div class="text-6xl mb-4 opacity-20">📊</div>
+            <h3 class="text-lg font-bold mb-2">尚無辨識記錄</h3>
+            <p class="text-sm opacity-60">上傳股票圖片後，資料將顯示在此處</p>
+          </div>
+
+          <!-- 表格 -->
+          <div
+            v-else
+            class="overflow-x-auto rounded-2xl border"
+            :class="isStealth ? 'border-slate-200' : 'border-zinc-800'"
+          >
+            <table class="w-full text-sm">
+              <thead>
+                <tr
+                  class="border-b font-bold"
+                  :class="
+                    isStealth
+                      ? 'bg-slate-100 border-slate-200 text-slate-700'
+                      : 'bg-zinc-900/50 border-zinc-800 text-zinc-300'
+                  "
+                >
+                  <th class="px-4 py-4 text-left font-bold tracking-wide">#</th>
+                  <th class="px-4 py-4 text-left font-bold tracking-wide">股票代號</th>
+                  <th class="px-4 py-4 text-right font-bold tracking-wide">新增時股價</th>
+                  <th class="px-4 py-4 text-right font-bold tracking-wide">目前股價</th>
+                  <th class="px-4 py-4 text-right font-bold tracking-wide">支撐</th>
+                  <th class="px-4 py-4 text-right font-bold tracking-wide">短線目標</th>
+                  <th class="px-4 py-4 text-right font-bold tracking-wide">波段目標</th>
+                  <th class="px-4 py-4 text-right font-bold tracking-wide">換股價</th>
+                  <th class="px-4 py-4 text-center font-bold tracking-wide">狀態</th>
+                  <th class="px-4 py-4 text-left font-bold tracking-wide">傳入時間</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(stock, index) in recognizedStocks"
+                  :key="stock._id"
+                  class="border-b transition-colors hover:bg-opacity-50"
+                  :class="
+                    isStealth
+                      ? 'border-slate-100 hover:bg-slate-50'
+                      : 'border-zinc-800/50 hover:bg-zinc-900/30'
+                  "
+                >
+                  <!-- 序號 -->
+                  <td class="px-4 py-4 font-mono text-xs opacity-50">
+                    {{ index + 1 }}
+                  </td>
+
+                  <!-- 股票代號 -->
+                  <td class="px-4 py-4">
+                    <div class="flex items-center gap-2">
+                      <button
+                        @click="togglePin(stock.code)"
+                        class="opacity-40 hover:opacity-100 transition-opacity"
+                      >
+                        {{ pinnedList.includes(stock.code) ? '📌' : '📍' }}
+                      </button>
+                      <span
+                        class="font-black text-lg tracking-tight"
+                        :class="isStealth ? 'text-slate-900' : 'text-white'"
+                      >
+                        {{ stock.code }} {{ stock.market.name }}
+                      </span>
+                    </div>
+                  </td>
+
+                  <!-- 新增時股價 (資料庫記錄) -->
+                  <td class="px-4 py-4 text-right">
+                    <span
+                      v-if="stock.currentPrice"
+                      class="font-mono text-sm"
+                      :class="isStealth ? 'text-slate-600' : 'text-zinc-400'"
+                    >
+                      {{ formatStockPrice(stock.currentPrice) }}
+                    </span>
+                    <span v-else class="text-xs opacity-40">-</span>
+                  </td>
+
+                  <!-- 目前股價 (即時 API) -->
+                  <td class="px-4 py-4 text-right">
+                    <div
+                      v-if="stock.market && stock.market.currentPrice"
+                      class="flex flex-col items-end gap-1"
+                    >
+                      <!-- 股價顏色：紅漲綠跌（比照戰情室，比較 currentPrice vs yesterdayClose） -->
+                      <span
+                        class="font-bold text-base"
+                        :class="
+                          stock.market.yesterdayClose
+                            ? parseFloat(stock.market.currentPrice) > parseFloat(stock.market.yesterdayClose)
+                              ? isStealth ? 'text-slate-900 font-black' : 'text-red-400'
+                              : parseFloat(stock.market.currentPrice) < parseFloat(stock.market.yesterdayClose)
+                                ? isStealth ? 'text-slate-500 font-medium' : 'text-green-400'
+                                : isStealth ? 'text-slate-700' : 'text-white'
+                            : isStealth ? 'text-blue-600' : 'text-blue-400'
+                        "
+                      >
+                        {{ formatStockPrice(stock.market.currentPrice) }}
+                      </span>
+                      <!-- 漲跌幅 (相比昨收價)：紅漲綠跌 -->
+                      <span
+                        v-if="stock.market.yesterdayClose"
+                        class="text-xs font-mono"
+                        :class="
+                          parseFloat(stock.market.currentPrice) > parseFloat(stock.market.yesterdayClose)
+                            ? isStealth ? 'text-slate-900 font-bold' : 'text-red-400'
+                            : parseFloat(stock.market.currentPrice) < parseFloat(stock.market.yesterdayClose)
+                              ? isStealth ? 'text-slate-500' : 'text-green-400'
+                              : 'text-gray-500'
+                        "
+                      >
+                        {{
+                          parseFloat(stock.market.currentPrice) > parseFloat(stock.market.yesterdayClose)
+                            ? '▲ ' +
+                              (
+                                ((parseFloat(stock.market.currentPrice) -
+                                  parseFloat(stock.market.yesterdayClose)) /
+                                  parseFloat(stock.market.yesterdayClose)) *
+                                100
+                              ).toFixed(2) +
+                              '%'
+                            : parseFloat(stock.market.currentPrice) < parseFloat(stock.market.yesterdayClose)
+                              ? '▼ ' +
+                                (
+                                  ((parseFloat(stock.market.yesterdayClose) -
+                                    parseFloat(stock.market.currentPrice)) /
+                                    parseFloat(stock.market.yesterdayClose)) *
+                                  100
+                                ).toFixed(2) +
+                                '%'
+                              : '— 0.00%'
+                        }}
+                      </span>
+                      <!-- 相比新增時股價的變化 (次要資訊) -->
+                      <span
+                        v-if="stock.currentPrice"
+                        class="text-[10px] font-mono opacity-40"
+                      >
+                        vs 新增: {{
+                          parseFloat(stock.market.currentPrice) > parseFloat(stock.currentPrice)
+                            ? '▲' + ((parseFloat(stock.market.currentPrice) - parseFloat(stock.currentPrice)) / parseFloat(stock.currentPrice) * 100).toFixed(1) + '%'
+                            : parseFloat(stock.market.currentPrice) < parseFloat(stock.currentPrice)
+                              ? '▼' + ((parseFloat(stock.currentPrice) - parseFloat(stock.market.currentPrice)) / parseFloat(stock.currentPrice) * 100).toFixed(1) + '%'
+                              : '0.0%'
+                        }}
+                      </span>
+                    </div>
+                    <span v-else class="text-xs opacity-40">-</span>
+                  </td>
+
+                  <!-- 支撐 -->
+                  <td class="px-4 py-4 text-right">
+                    <span
+                      v-if="stock.support"
+                      class="font-mono text-sm"
+                      :class="isStealth ? 'text-slate-700' : 'text-zinc-300'"
+                    >
+                      {{ stock.support }}
+                    </span>
+                    <span v-else class="text-xs opacity-40">-</span>
+                  </td>
+
+                  <!-- 短線目標 -->
+                  <td class="px-4 py-4 text-right">
+                    <span
+                      v-if="stock.shortTermProfit"
+                      class="font-mono text-sm"
+                      :class="isStealth ? 'text-green-600' : 'text-green-400'"
+                    >
+                      {{ stock.shortTermProfit }}
+                    </span>
+                    <span v-else class="text-xs opacity-40">-</span>
+                  </td>
+
+                  <!-- 波段目標 -->
+                  <td class="px-4 py-4 text-right">
+                    <span
+                      v-if="stock.waveProfit"
+                      class="font-mono text-sm"
+                      :class="isStealth ? 'text-purple-600' : 'text-purple-400'"
+                    >
+                      {{ stock.waveProfit }}
+                    </span>
+                    <span v-else class="text-xs opacity-40">-</span>
+                  </td>
+
+                  <!-- 換股價 -->
+                  <td class="px-4 py-4 text-right">
+                    <span
+                      v-if="stock.swapRef"
+                      class="font-mono text-sm"
+                      :class="isStealth ? 'text-orange-600' : 'text-orange-400'"
+                    >
+                      {{ stock.swapRef }}
+                    </span>
+                    <span v-else class="text-xs opacity-40">-</span>
+                  </td>
+
+                  <!-- 狀態 (isSuccess) -->
+                  <td class="px-4 py-4 text-center">
+                    <span
+                      v-if="stock.isSuccess === true"
+                      class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold"
+                      :class="
+                        isStealth
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-green-500/20 text-green-400 border border-green-500/30'
+                      "
+                    >
+                      ✓ 成功
+                    </span>
+                    <span
+                      v-else-if="stock.isSuccess === false"
+                      class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold"
+                      :class="
+                        isStealth
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                      "
+                    >
+                      ✗ 失敗
+                    </span>
+                    <span
+                      v-else
+                      class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold opacity-40"
+                      :class="
+                        isStealth ? 'bg-slate-100 text-slate-500' : 'bg-zinc-800 text-zinc-500'
+                      "
+                    >
+                      - 待定
+                    </span>
+                  </td>
+
+                  <!-- 傳入時間 -->
+                  <td class="px-4 py-4 font-mono text-xs opacity-60">
+                    {{
+                      new Date(stock.updatedAt).toLocaleString('zh-TW', {
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 統計資訊 -->
+          <div
+            class="mt-6 p-6 rounded-xl border"
+            :class="isStealth ? 'bg-slate-50 border-slate-200' : 'bg-zinc-900/30 border-zinc-800'"
+          >
+            <h3 class="text-sm font-bold mb-4 opacity-60 uppercase tracking-wide">
+              {{ isStealth ? 'Statistics' : '統計摘要' }}
+            </h3>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div>
+                <div class="text-xs opacity-60 mb-1">總記錄數</div>
+                <div class="text-2xl font-black">{{ recognizedStocks.length }}</div>
+              </div>
+              <div>
+                <div class="text-xs opacity-60 mb-1">有新增時股價</div>
+                <div class="text-2xl font-black text-slate-500">
+                  {{ recognizedStocks.filter((s) => s.currentPrice).length }}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs opacity-60 mb-1">有即時股價</div>
+                <div class="text-2xl font-black text-blue-500">
+                  {{ recognizedStocks.filter((s) => s.market && s.market.currentPrice).length }}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs opacity-60 mb-1">成功案例</div>
+                <div class="text-2xl font-black text-green-500">
+                  {{ recognizedStocks.filter((s) => s.isSuccess === true).length }}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs opacity-60 mb-1">待評估</div>
+                <div class="text-2xl font-black text-zinc-500">
+                  {{ recognizedStocks.filter((s) => s.isSuccess === null).length }}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </main>
