@@ -67,7 +67,7 @@ function isTradingHours() {
 // 取得建議的快取時間（根據交易時段）
 function getRecommendedCacheTTL() {
   if (isTradingHours()) {
-    return 5000 // 交易時段：5秒
+    return 2500 // 交易時段：2.5秒
   } else {
     const now = new Date()
     const taipei = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }))

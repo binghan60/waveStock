@@ -303,7 +303,7 @@ const isTradingHours = () => {
 // 取得建議的刷新間隔（毫秒）
 const getRefreshInterval = () => {
   if (isTradingHours()) {
-    return 5000 // 交易時段：5秒
+    return 2500 // 交易時段：5秒
   } else {
     const now = new Date()
     const hour = now.getHours()
@@ -427,7 +427,7 @@ onUnmounted(() => {
           </span>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           <template v-for="item in pinnedStocks" :key="item._id || item.id">
             <!-- 手動新增的股票 -->
             <StockCard
