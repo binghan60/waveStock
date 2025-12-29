@@ -5,6 +5,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import axios from 'axios'
 import RecognizedStock from '../models/RecognizedStock.js'
+import StockHitLog from '../models/StockHitLog.js'
 
 const router = express.Router()
 router.use(express.json())
@@ -558,6 +559,161 @@ router.post('/check-targets', async (req, res) => {
     })
   } catch (error) {
     console.error('❌ 系統錯誤:', error.message)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+// 還沒有 //觸及所有紀錄
+const parseTargetPrice = (valStr, type) => {
+  if (!valStr) return null
+
+  // 取出所有數字
+  const numbers = valStr
+    .toString()
+    .split(/[~,\- ]/)
+    .map((v) => parseFloat(v))
+    .filter((n) => !isNaN(n))
+
+  if (numbers.length === 0) return null
+
+  // 根據類型決定取哪一個邊界
+  if (type === 'support' || type === 'swap') {
+    // 📉 看跌 (支撐/換股)：取 Max (寬鬆判定)
+    return Math.max(...numbers)
+  } else {
+    // 📈 看漲 (短線/波段)：取 Min (寬鬆判定)
+    return Math.min(...numbers)
+  }
+}
+
+// ==========================================
+// 🚀 API 主程式
+// ==========================================
+
+router.post('/check-levels', async (req, res) => {
+  try {
+    console.log('🎯 [排程啟動] 開始檢查所有股票位階 (支撐/短線/波段/換股)...')
+
+    // 1. 找出設定了目標的股票
+    const stocks = await RecognizedStock.find({
+      $or: [{ support: { $ne: null } }, { shortTermProfit: { $ne: null } }, { waveProfit: { $ne: null } }, { swapRef: { $ne: null } }],
+    })
+
+    if (stocks.length === 0) {
+      return res.json({ success: true, message: '沒有設定目標的股票', results: [] })
+    }
+
+    // 計算今天起始時間 (用於防止當日重複寫入 Log)
+    const startOfToday = new Date()
+    startOfToday.setHours(0, 0, 0, 0)
+
+    let newLogCount = 0
+    const chunks = chunkArray(stocks, 10) // 10支一組
+
+    console.log(`📊 共 ${stocks.length} 支股票，分為 ${chunks.length} 組檢查`)
+
+    // 2. 開始分組迴圈
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i]
+
+      // 雙路查詢 (TSE + OTC)
+      const queryStr = chunk.map((s) => `tse_${s.code}.tw|otc_${s.code}.tw`).join('|')
+      const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${queryStr}`
+
+      try {
+        const response = await axios.get(`${url}&_=${Date.now()}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+        })
+
+        const msgArray = response.data.msgArray || []
+
+        for (const stockInfo of msgArray) {
+          // 基本資料完整性檢查 (只要有價格就跑)
+          if (!stockInfo.h || stockInfo.h === '-' || !stockInfo.l || stockInfo.l === '-') continue
+
+          // ⚠️ 已移除日期比對，請確保 Cron Job 只在盤中執行
+
+          const code = stockInfo.c
+          const currentHigh = parseFloat(stockInfo.h) // 看漲用
+          const currentLow = parseFloat(stockInfo.l) // 看跌用
+
+          const dbStock = stocks.find((s) => s.code === code)
+          if (!dbStock) continue
+
+          // ======================================
+          // 內部函式：檢查並寫入 Log
+          // ======================================
+          const checkAndLog = async (type, targetValStr, compareVal, compareType) => {
+            if (!targetValStr) return
+
+            // 解析門檻
+            const threshold = parseTargetPrice(targetValStr, type)
+            if (threshold === null) return
+
+            // 判斷是否觸及 (gte: >=, lte: <=)
+            const isHit = compareType === 'gte' ? compareVal >= threshold : compareVal <= threshold
+
+            if (isHit) {
+              // 防重複檢查：今天是否已經紀錄過這種類型？
+              const existLog = await StockHitLog.findOne({
+                stockId: dbStock._id,
+                type: type,
+                happenedAt: { $gte: startOfToday },
+              })
+
+              if (!existLog) {
+                console.log(`✅ [${code}] ${type} 觸發！現價 ${compareVal} ${compareType === 'gte' ? '>=' : '<='} 門檻 ${threshold}`)
+
+                // 1. 寫入 Log
+                await StockHitLog.create({
+                  stockId: dbStock._id,
+                  code: dbStock.code,
+                  type: type,
+                  targetPrice: threshold,
+                  triggerPrice: compareVal,
+                })
+
+                // 2. (可選) 更新主表狀態
+                if (type === 'shortTerm') dbStock.isSuccess = true
+                await dbStock.save()
+
+                newLogCount++
+              }
+            }
+          }
+
+          // ======================================
+          // 執行四項檢查
+          // ======================================
+
+          // 1. 支撐 (看 Low <= 門檻)
+          await checkAndLog('support', dbStock.support, currentLow, 'lte')
+
+          // 2. 換股 (看 Low <= 門檻)
+          await checkAndLog('swap', dbStock.swapRef, currentLow, 'lte')
+
+          // 3. 短線 (看 High >= 門檻)
+          await checkAndLog('shortTerm', dbStock.shortTermProfit, currentHigh, 'gte')
+
+          // 4. 波段 (看 High >= 門檻)
+          await checkAndLog('wave', dbStock.waveProfit, currentHigh, 'gte')
+        }
+      } catch (err) {
+        console.error(`❌ 第 ${i + 1} 組 API 查詢失敗:`, err.message)
+      }
+
+      // 休息 1 秒
+      if (i < chunks.length - 1) await new Promise((r) => setTimeout(r, 1000))
+    }
+
+    console.log(`🎉 檢查完成！今日新增 ${newLogCount} 筆觸價紀錄`)
+
+    res.json({
+      success: true,
+      message: '檢查完成',
+      newLogCount: newLogCount,
+    })
+  } catch (error) {
+    console.error('❌ 系統錯誤:', error)
     res.status(500).json({ success: false, message: error.message })
   }
 })
