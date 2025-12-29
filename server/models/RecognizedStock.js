@@ -33,9 +33,14 @@ const recognizedStockSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
-    // 是否成功（預留欄位，先給空值）
+    // 是否成功
     isSuccess: {
       type: Boolean,
+      default: null,
+    },
+    // 達標日期（當 isSuccess 變為 true 時記錄）
+    successDate: {
+      type: Date,
       default: null,
     },
     // 來源類型：'user' (使用者自選) 或 'system' (系統推薦)
@@ -55,10 +60,12 @@ const recognizedStockSchema = new mongoose.Schema(
   }
 )
 
-// 建立索引，方便查詢
+// ... 索引設定不變 ...
 recognizedStockSchema.index({ code: 1, createdAt: -1 })
 recognizedStockSchema.index({ source: 1 })
 recognizedStockSchema.index({ isFavorite: 1 })
+// 建議也可以幫 successDate 加索引，方便查詢「最近達標」的股票
+recognizedStockSchema.index({ successDate: -1 })
 
 const RecognizedStock = mongoose.model('RecognizedStock', recognizedStockSchema)
 

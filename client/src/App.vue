@@ -742,12 +742,22 @@ onUnmounted(() => {
                         class="font-bold text-base"
                         :class="
                           stock.market.yesterdayClose
-                            ? parseFloat(stock.market.currentPrice) > parseFloat(stock.market.yesterdayClose)
-                              ? isStealth ? 'text-slate-900 font-black' : 'text-red-400'
-                              : parseFloat(stock.market.currentPrice) < parseFloat(stock.market.yesterdayClose)
-                                ? isStealth ? 'text-slate-500 font-medium' : 'text-green-400'
-                                : isStealth ? 'text-slate-700' : 'text-white'
-                            : isStealth ? 'text-blue-600' : 'text-blue-400'
+                            ? parseFloat(stock.market.currentPrice) >
+                              parseFloat(stock.market.yesterdayClose)
+                              ? isStealth
+                                ? 'text-slate-900 font-black'
+                                : 'text-red-400'
+                              : parseFloat(stock.market.currentPrice) <
+                                  parseFloat(stock.market.yesterdayClose)
+                                ? isStealth
+                                  ? 'text-slate-500 font-medium'
+                                  : 'text-green-400'
+                                : isStealth
+                                  ? 'text-slate-700'
+                                  : 'text-white'
+                            : isStealth
+                              ? 'text-blue-600'
+                              : 'text-blue-400'
                         "
                       >
                         {{ formatStockPrice(stock.market.currentPrice) }}
@@ -757,15 +767,22 @@ onUnmounted(() => {
                         v-if="stock.market.yesterdayClose"
                         class="text-xs font-mono"
                         :class="
-                          parseFloat(stock.market.currentPrice) > parseFloat(stock.market.yesterdayClose)
-                            ? isStealth ? 'text-slate-900 font-bold' : 'text-red-400'
-                            : parseFloat(stock.market.currentPrice) < parseFloat(stock.market.yesterdayClose)
-                              ? isStealth ? 'text-slate-500' : 'text-green-400'
+                          parseFloat(stock.market.currentPrice) >
+                          parseFloat(stock.market.yesterdayClose)
+                            ? isStealth
+                              ? 'text-slate-900 font-bold'
+                              : 'text-red-400'
+                            : parseFloat(stock.market.currentPrice) <
+                                parseFloat(stock.market.yesterdayClose)
+                              ? isStealth
+                                ? 'text-slate-500'
+                                : 'text-green-400'
                               : 'text-gray-500'
                         "
                       >
                         {{
-                          parseFloat(stock.market.currentPrice) > parseFloat(stock.market.yesterdayClose)
+                          parseFloat(stock.market.currentPrice) >
+                          parseFloat(stock.market.yesterdayClose)
                             ? '▲ ' +
                               (
                                 ((parseFloat(stock.market.currentPrice) -
@@ -774,7 +791,8 @@ onUnmounted(() => {
                                 100
                               ).toFixed(2) +
                               '%'
-                            : parseFloat(stock.market.currentPrice) < parseFloat(stock.market.yesterdayClose)
+                            : parseFloat(stock.market.currentPrice) <
+                                parseFloat(stock.market.yesterdayClose)
                               ? '▼ ' +
                                 (
                                   ((parseFloat(stock.market.yesterdayClose) -
@@ -787,15 +805,27 @@ onUnmounted(() => {
                         }}
                       </span>
                       <!-- 相比新增時股價的變化 (次要資訊) -->
-                      <span
-                        v-if="stock.currentPrice"
-                        class="text-[10px] font-mono opacity-40"
-                      >
-                        vs 新增: {{
+                      <span v-if="stock.currentPrice" class="text-[10px] font-mono opacity-40">
+                        vs 新增:
+                        {{
                           parseFloat(stock.market.currentPrice) > parseFloat(stock.currentPrice)
-                            ? '▲' + ((parseFloat(stock.market.currentPrice) - parseFloat(stock.currentPrice)) / parseFloat(stock.currentPrice) * 100).toFixed(1) + '%'
+                            ? '▲' +
+                              (
+                                ((parseFloat(stock.market.currentPrice) -
+                                  parseFloat(stock.currentPrice)) /
+                                  parseFloat(stock.currentPrice)) *
+                                100
+                              ).toFixed(1) +
+                              '%'
                             : parseFloat(stock.market.currentPrice) < parseFloat(stock.currentPrice)
-                              ? '▼' + ((parseFloat(stock.currentPrice) - parseFloat(stock.market.currentPrice)) / parseFloat(stock.currentPrice) * 100).toFixed(1) + '%'
+                              ? '▼' +
+                                (
+                                  ((parseFloat(stock.currentPrice) -
+                                    parseFloat(stock.market.currentPrice)) /
+                                    parseFloat(stock.currentPrice)) *
+                                  100
+                                ).toFixed(1) +
+                                '%'
                               : '0.0%'
                         }}
                       </span>
@@ -851,45 +881,56 @@ onUnmounted(() => {
                     <span v-else class="text-xs opacity-40">-</span>
                   </td>
 
-                  <!-- 狀態 (isSuccess) -->
-                  <td class="px-4 py-4 text-center">
-                    <span
-                      v-if="stock.isSuccess === true"
-                      class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold"
-                      :class="
-                        isStealth
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-green-500/20 text-green-400 border border-green-500/30'
-                      "
-                    >
-                      ✓ 成功
-                    </span>
-                    <span
-                      v-else-if="stock.isSuccess === false"
-                      class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold"
-                      :class="
-                        isStealth
-                          ? 'bg-red-100 text-red-700'
-                          : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                      "
-                    >
-                      ✗ 失敗
-                    </span>
-                    <span
-                      v-else
-                      class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold opacity-40"
-                      :class="
-                        isStealth ? 'bg-slate-100 text-slate-500' : 'bg-zinc-800 text-zinc-500'
-                      "
-                    >
-                      - 待定
-                    </span>
+                  <!-- 狀態 (isSuccess) + 達標日期 -->
+                  <td class="px-4 py-3 text-center align-middle">
+                    <div class="flex flex-col items-center justify-center gap-1">
+                      <span
+                        class="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm min-w-[60px]"
+                        :class="[
+                          stock.isSuccess === true
+                            ? isStealth
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-green-500/20 text-green-400 border border-green-500/30'
+                            : '',
+                          stock.isSuccess === false
+                            ? isStealth
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                            : '',
+                          stock.isSuccess === null || stock.isSuccess === undefined
+                            ? isStealth
+                              ? 'bg-slate-100 text-slate-400'
+                              : 'bg-zinc-800 text-zinc-500 border border-zinc-700'
+                            : '',
+                        ]"
+                      >
+                        <template v-if="stock.isSuccess === true">✓ 成功</template>
+                        <template v-else-if="stock.isSuccess === false">✗ 失敗</template>
+                        <template v-else>- 待定</template>
+                      </span>
+
+                      <div class="h-4 flex items-center">
+                        <span
+                          v-if="stock.isSuccess === true && stock.successDate"
+                          class="text-[10px] font-mono tracking-tight"
+                          :class="isStealth ? 'text-green-600/80' : 'text-green-400/70'"
+                        >
+                          {{
+                            new Date(stock.successDate).toLocaleDateString('zh-TW', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                            })
+                          }}
+                        </span>
+                      </div>
+                    </div>
                   </td>
 
                   <!-- 傳入時間 -->
                   <td class="px-4 py-4 font-mono text-xs opacity-60">
                     {{
-                      new Date(stock.updatedAt).toLocaleString('zh-TW', {
+                      new Date(stock.createdAt).toLocaleString('zh-TW', {
                         month: '2-digit',
                         day: '2-digit',
                         hour: '2-digit',

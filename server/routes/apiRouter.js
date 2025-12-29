@@ -443,58 +443,71 @@ const chunkArray = (arr, size) => {
   return Array.from({ length: Math.ceil(arr.length / size) }, (v, i) => arr.slice(i * size, i * size + size))
 }
 
-// 檢查股票是否觸及短線目標
 router.post('/check-targets', async (req, res) => {
   try {
     console.log('🎯 開始檢查所有股票是否觸及短線目標 (使用即時行情)...')
 
     // 1. 找出所有未達標且有設定目標的股票
+    // ⚠️ 強烈建議加回過濾條件，避免抓到 shortTermProfit 是 null 或 undefined 的資料
     const stocks = await RecognizedStock.find({
-      isSuccess: null,
+      // ✅ 修改處：只要是 null 或 false 都會被選出來
+      isSuccess: { $in: [null, false] },
+      // 獲利目標必須存在且有值
       shortTermProfit: { $exists: true, $ne: null },
     })
-console.log(stocks)
+    console.log(stocks)
+
     if (stocks.length === 0) {
-      return res.json({ success: true, message: '沒有待檢查的股票', checked: 0, updated: 0 })
+      return res.json({
+        success: true,
+        message: '沒有待檢查的股票',
+        checked: 0,
+        updated: 0,
+      })
     }
 
     console.log(`📊 找到 ${stocks.length} 支待檢查的股票`)
 
     let updatedCount = 0
-    const results = []
+    const results = [] // 紀錄檢查結果
 
-    // 2. 將股票分組，每組 20 支 (MIS API URL 有長度限制)
-    // 注意：這裡預設為上市(tse)，若你的 DB 有區分上櫃，需動態組出 'otc_xxxx.tw'
-    const chunks = chunkArray(stocks, 20)
+    // 2. 將股票分組，每組 10 支 (因為我們會同時查 tse/otc，URL 會變長，縮小每組數量比較安全)
+    const chunks = chunkArray(stocks, 10)
 
-    for (const chunk of chunks) {
-      // 3. 組合查詢字串：tse_2330.tw|tse_2317.tw|...
-      const queryStr = chunk.map((s) => `tse_${s.code}.tw`).join('|')
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i]
+
+      // 3. 雙路查詢：同時組出 tse_xxxx.tw 和 otc_xxxx.tw
+      // 這樣無論它是上市還是上櫃，API 都會回傳正確的那一個
+      const queryStr = chunk.map((s) => `tse_${s.code}.tw|otc_${s.code}.tw`).join('|')
+
       const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${queryStr}`
 
       try {
-        // 加入 Timestamp 防止 cache
         const response = await axios.get(`${url}&_=${Date.now()}`, {
-          headers: { 'User-Agent': 'Mozilla/5.0' }, // 加上 User-Agent 比較保險
+          headers: { 'User-Agent': 'Mozilla/5.0' },
         })
 
         const msgArray = response.data.msgArray || []
 
-        // 4. 遍歷回傳的即時資料
+        // 4. 遍歷回傳資料
         for (const stockInfo of msgArray) {
-          if (!stockInfo.h || stockInfo.h === '-') continue // 剛開盤可能沒最高價
+          // 過濾無效資料 (有些暫停交易或剛開盤沒最高價的)
+          if (!stockInfo.h || stockInfo.h === '-' || stockInfo.h === '0.00') continue
 
           const code = stockInfo.c // 股票代號
-          const currentHigh = parseFloat(stockInfo.h) // 當日最高價 (High)
-          const currentPrice = parseFloat(stockInfo.z) // 目前成交價 (Recent)
+          const currentHigh = parseFloat(stockInfo.h) // 當日最高
+          const currentPrice = parseFloat(stockInfo.z) // 現價
 
-          // 找到對應的 DB 資料
+          // 找到對應的 DB 資料 (這裡要用 code 比對，因為回傳的不一定照順序)
           const dbStock = stocks.find((s) => s.code === code)
-          if (!dbStock) continue
+
+          // 防止重複處理 (有極小機率 tse 和 otc 都回傳，雖然罕見)
+          if (!dbStock || results.find((r) => r.code === code)) continue
 
           const targetPrice = parseFloat(dbStock.shortTermProfit)
 
-          console.log(`🔍 ${code} 當日最高: ${currentHigh} / 目標: ${targetPrice}`)
+          console.log(`🔍 ${code} 最高: ${currentHigh} / 目標: ${targetPrice}`)
 
           let isSuccess = false
           let reason = ''
@@ -507,6 +520,7 @@ console.log(stocks)
 
             // 更新 DB
             dbStock.isSuccess = true
+            dbStock.successDate = new Date()
             await dbStock.save()
             updatedCount++
           } else {
@@ -517,27 +531,30 @@ console.log(stocks)
             code,
             success: isSuccess,
             highPrice: currentHigh,
-            currentPrice, // 多回傳一個現價供參考
+            currentPrice,
             targetPrice,
             reason,
           })
         }
       } catch (err) {
-        console.error(`❌ 批次查詢失敗:`, err.message)
+        console.error(`❌ 第 ${i + 1} 組查詢失敗:`, err.message)
       }
 
-      // 每批次中間休息 1 秒，雖然 MIS 較寬鬆，但還是禮貌性 delay
-      await new Promise((r) => setTimeout(r, 1000))
+      // 每批次中間休息 1 秒
+      if (i < chunks.length - 1) {
+        await new Promise((r) => setTimeout(r, 1000))
+      }
     }
 
     console.log(`🎉 檢查完成！更新 ${updatedCount} 支`)
 
+    // 迴圈結束後才回傳
     res.json({
       success: true,
       message: '檢查完成',
-      checked: stocks.length,
+      checked: stocks.length, // 這裡是 DB 找到的總數
       updated: updatedCount,
-      results,
+      results, // 這裡是實際有查到資料的列表
     })
   } catch (error) {
     console.error('❌ 系統錯誤:', error.message)
