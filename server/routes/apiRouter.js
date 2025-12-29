@@ -72,7 +72,7 @@ function getRecommendedCacheTTL() {
     const now = new Date()
     const taipei = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }))
     const hour = taipei.getHours()
-    
+
     // 盤後時段 13:30-18:00：2分鐘
     if (hour >= 13 && hour < 18) {
       return 120000
@@ -134,13 +134,13 @@ async function fetchStockDataWithRetry(stockIds, retryCount = 0) {
     return results
   } catch (error) {
     console.error(`❌ 批量查詢失敗 (嘗試 ${retryCount + 1}/${MAX_RETRIES + 1})`, error.message)
-    
+
     // 如果還有重試次數，則延遲後重試
     if (retryCount < MAX_RETRIES) {
-      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (retryCount + 1)))
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY * (retryCount + 1)))
       return fetchStockDataWithRetry(stockIds, retryCount + 1)
     }
-    
+
     return []
   }
 }
@@ -151,11 +151,11 @@ async function fetchStockData(stockIds) {
 
   // 生成快取鍵（排序後確保一致性）
   const cacheKey = stockIds.sort().join(',')
-  
+
   // 1️⃣ 檢查快取
   const cached = stockPriceCache.get(cacheKey)
   const recommendedTTL = getRecommendedCacheTTL()
-  
+
   if (cached && Date.now() - cached.timestamp < recommendedTTL) {
     console.log(`✅ 使用快取數據 (剩餘 ${Math.round((recommendedTTL - (Date.now() - cached.timestamp)) / 1000)}秒)`)
     return cached.data
@@ -164,11 +164,11 @@ async function fetchStockData(stockIds) {
   // 2️⃣ 請求節流保護
   const now = Date.now()
   const timeSinceLastRequest = now - lastRequestTime
-  
+
   if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
     const waitTime = MIN_REQUEST_INTERVAL - timeSinceLastRequest
     console.log(`⏱️ 請求節流：等待 ${waitTime}ms`)
-    await new Promise(resolve => setTimeout(resolve, waitTime))
+    await new Promise((resolve) => setTimeout(resolve, waitTime))
   }
 
   // 3️⃣ 呼叫 API（帶重試機制）
@@ -179,7 +179,7 @@ async function fetchStockData(stockIds) {
   // 4️⃣ 存入快取
   stockPriceCache.set(cacheKey, {
     data,
-    timestamp: Date.now()
+    timestamp: Date.now(),
   })
 
   // 5️⃣ 限制快取大小
@@ -216,20 +216,20 @@ router.get('/system-status', (req, res) => {
     cacheDetails: Array.from(stockPriceCache.entries()).map(([key, value]) => ({
       key,
       age: Math.round((Date.now() - value.timestamp) / 1000),
-      itemCount: value.data.length
-    }))
+      itemCount: value.data.length,
+    })),
   }
 
   const tradingStatus = {
     isTradingHours: isTradingHours(),
     recommendedCacheTTL: getRecommendedCacheTTL(),
-    timeSinceLastRequest: lastRequestTime ? Date.now() - lastRequestTime : null
+    timeSinceLastRequest: lastRequestTime ? Date.now() - lastRequestTime : null,
   }
 
   res.json({
     cache: cacheStats,
     trading: tradingStatus,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   })
 })
 
@@ -439,4 +439,109 @@ router.get('/recognized-stocks/stats/summary', async (req, res) => {
   }
 })
 
+const chunkArray = (arr, size) => {
+  return Array.from({ length: Math.ceil(arr.length / size) }, (v, i) => arr.slice(i * size, i * size + size))
+}
+
+// 檢查股票是否觸及短線目標
+router.post('/check-targets', async (req, res) => {
+  try {
+    console.log('🎯 開始檢查所有股票是否觸及短線目標 (使用即時行情)...')
+
+    // 1. 找出所有未達標且有設定目標的股票
+    const stocks = await RecognizedStock.find({
+      isSuccess: null,
+      shortTermProfit: { $exists: true, $ne: null },
+    })
+console.log(stocks)
+    if (stocks.length === 0) {
+      return res.json({ success: true, message: '沒有待檢查的股票', checked: 0, updated: 0 })
+    }
+
+    console.log(`📊 找到 ${stocks.length} 支待檢查的股票`)
+
+    let updatedCount = 0
+    const results = []
+
+    // 2. 將股票分組，每組 20 支 (MIS API URL 有長度限制)
+    // 注意：這裡預設為上市(tse)，若你的 DB 有區分上櫃，需動態組出 'otc_xxxx.tw'
+    const chunks = chunkArray(stocks, 20)
+
+    for (const chunk of chunks) {
+      // 3. 組合查詢字串：tse_2330.tw|tse_2317.tw|...
+      const queryStr = chunk.map((s) => `tse_${s.code}.tw`).join('|')
+      const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${queryStr}`
+
+      try {
+        // 加入 Timestamp 防止 cache
+        const response = await axios.get(`${url}&_=${Date.now()}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' }, // 加上 User-Agent 比較保險
+        })
+
+        const msgArray = response.data.msgArray || []
+
+        // 4. 遍歷回傳的即時資料
+        for (const stockInfo of msgArray) {
+          if (!stockInfo.h || stockInfo.h === '-') continue // 剛開盤可能沒最高價
+
+          const code = stockInfo.c // 股票代號
+          const currentHigh = parseFloat(stockInfo.h) // 當日最高價 (High)
+          const currentPrice = parseFloat(stockInfo.z) // 目前成交價 (Recent)
+
+          // 找到對應的 DB 資料
+          const dbStock = stocks.find((s) => s.code === code)
+          if (!dbStock) continue
+
+          const targetPrice = parseFloat(dbStock.shortTermProfit)
+
+          console.log(`🔍 ${code} 當日最高: ${currentHigh} / 目標: ${targetPrice}`)
+
+          let isSuccess = false
+          let reason = ''
+
+          // 5. 判斷邏輯
+          if (currentHigh >= targetPrice) {
+            isSuccess = true
+            reason = `最高價 ${currentHigh} 已觸及目標 ${targetPrice}`
+            console.log(`✅ ${code} 達標！`)
+
+            // 更新 DB
+            dbStock.isSuccess = true
+            await dbStock.save()
+            updatedCount++
+          } else {
+            reason = `尚未觸及 (最高: ${currentHigh})`
+          }
+
+          results.push({
+            code,
+            success: isSuccess,
+            highPrice: currentHigh,
+            currentPrice, // 多回傳一個現價供參考
+            targetPrice,
+            reason,
+          })
+        }
+      } catch (err) {
+        console.error(`❌ 批次查詢失敗:`, err.message)
+      }
+
+      // 每批次中間休息 1 秒，雖然 MIS 較寬鬆，但還是禮貌性 delay
+      await new Promise((r) => setTimeout(r, 1000))
+    }
+
+    console.log(`🎉 檢查完成！更新 ${updatedCount} 支`)
+
+    res.json({
+      success: true,
+      message: '檢查完成',
+      checked: stocks.length,
+      updated: updatedCount,
+      results,
+    })
+  } catch (error) {
+    console.error('❌ 系統錯誤:', error.message)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
 export default router
