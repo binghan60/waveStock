@@ -930,7 +930,7 @@ onUnmounted(() => {
                   <!-- 傳入時間 -->
                   <td class="px-4 py-4 font-mono text-xs opacity-60">
                     {{
-                      new Date(stock.createdAt).toLocaleString('zh-TW', {
+                      new Date(stock.updatedAt).toLocaleString('zh-TW', {
                         month: '2-digit',
                         day: '2-digit',
                         hour: '2-digit',
