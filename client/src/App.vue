@@ -677,10 +677,10 @@ onUnmounted(() => {
                   <th class="px-4 py-4 text-left font-bold tracking-wide">股票代號</th>
                   <th class="px-4 py-4 text-right font-bold tracking-wide">新增時股價</th>
                   <th class="px-4 py-4 text-right font-bold tracking-wide">目前股價</th>
-                  <th class="px-4 py-4 text-right font-bold tracking-wide">支撐</th>
+                  <th class="px-4 py-4 text-right font-bold tracking-wide">換股價</th>
+                  <th class="px-4 py-4 text-right font-bold tracking-wide">支撐區間</th>
                   <th class="px-4 py-4 text-right font-bold tracking-wide">短線目標</th>
                   <th class="px-4 py-4 text-right font-bold tracking-wide">波段目標</th>
-                  <th class="px-4 py-4 text-right font-bold tracking-wide">換股價</th>
                   <th class="px-4 py-4 text-center font-bold tracking-wide">狀態</th>
                   <th class="px-4 py-4 text-left font-bold tracking-wide">傳入時間</th>
                 </tr>
@@ -832,6 +832,17 @@ onUnmounted(() => {
                     </div>
                     <span v-else class="text-xs opacity-40">-</span>
                   </td>
+                  <!-- 換股價 -->
+                  <td class="px-4 py-4 text-right">
+                    <span
+                      v-if="stock.swapRef"
+                      class="font-mono text-sm"
+                      :class="isStealth ? 'text-orange-600' : 'text-orange-400'"
+                    >
+                      {{ stock.swapRef }}
+                    </span>
+                    <span v-else class="text-xs opacity-40">-</span>
+                  </td>
 
                   <!-- 支撐 -->
                   <td class="px-4 py-4 text-right">
@@ -869,17 +880,6 @@ onUnmounted(() => {
                     <span v-else class="text-xs opacity-40">-</span>
                   </td>
 
-                  <!-- 換股價 -->
-                  <td class="px-4 py-4 text-right">
-                    <span
-                      v-if="stock.swapRef"
-                      class="font-mono text-sm"
-                      :class="isStealth ? 'text-orange-600' : 'text-orange-400'"
-                    >
-                      {{ stock.swapRef }}
-                    </span>
-                    <span v-else class="text-xs opacity-40">-</span>
-                  </td>
 
                   <!-- 狀態 (isSuccess) + 達標日期 -->
                   <td class="px-4 py-3 text-center align-middle">
