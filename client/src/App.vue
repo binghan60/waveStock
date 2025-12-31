@@ -328,7 +328,7 @@ const isTradingHours = () => {
 // 取得建議的刷新間隔（毫秒）
 const getRefreshInterval = () => {
   if (isTradingHours()) {
-    return 2500 // 交易時段：5秒
+    return 5000 // 交易時段：5秒
   } else {
     const now = new Date()
     const hour = now.getHours()
@@ -909,7 +909,7 @@ onUnmounted(() => {
                         <template v-else>- 待定</template>
                       </span>
 
-                      <div class="h-4 flex items-center">
+                      <div class="h-4 flex items-center justify-center">
                         <span
                           v-if="stock.isSuccess === true && stock.successDate"
                           class="text-[10px] font-mono tracking-tight"
@@ -917,6 +917,19 @@ onUnmounted(() => {
                         >
                           {{
                             new Date(stock.successDate).toLocaleDateString('zh-TW', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                            })
+                          }}
+                        </span>
+                        <span
+                          v-else-if="stock.isSuccess === false && stock.updatedAt"
+                          class="text-[10px] font-mono tracking-tight"
+                          :class="isStealth ? 'text-red-600/80' : 'text-red-400/70'"
+                        >
+                          {{
+                            new Date(stock.updatedAt).toLocaleDateString('zh-TW', {
                               year: 'numeric',
                               month: '2-digit',
                               day: '2-digit',

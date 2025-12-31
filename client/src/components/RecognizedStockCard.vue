@@ -33,6 +33,28 @@ const formatAnalysisPrice = (val) => {
   return val || '無資料'
 }
 
+const getHitTypeName = (type) => {
+  const names = {
+    shortTerm: '短線',
+    wave: '波段',
+    support: '支撐',
+    swap: '換股',
+  }
+  return names[type] || type
+}
+
+const getHitTypeClass = (type, isStealth) => {
+  const colors = {
+    shortTerm: { normal: 'bg-green-500/20 text-green-300', stealth: 'bg-green-100 text-green-700' },
+    wave: { normal: 'bg-purple-500/20 text-purple-300', stealth: 'bg-purple-100 text-purple-700' },
+    support: { normal: 'bg-blue-500/20 text-blue-300', stealth: 'bg-blue-100 text-blue-700' },
+    swap: { normal: 'bg-orange-500/20 text-orange-400', stealth: 'bg-orange-100 text-orange-700' },
+  }
+  const style = colors[type] || { normal: 'bg-zinc-700 text-zinc-300', stealth: 'bg-slate-200 text-slate-600' }
+  return isStealth ? style.stealth : style.normal
+}
+
+
 // --- 計算屬性 ---
 
 const sourceLabel = computed(() => {
@@ -500,6 +522,24 @@ const priceChart = computed(() => {
           {{ formatAnalysisPrice(item[conf.key]) }}
         </div>
       </div>
+    </div>
+
+    <!-- Hit History -->
+    <div v-if="item.hitHistory && item.hitHistory.length > 0" class="mt-4 pt-4 border-t" :class="isStealth ? 'border-gray-200' : 'border-zinc-800'">
+      <h4 class="text-[10px] font-bold opacity-50 mb-2 uppercase tracking-wider">觸及歷史</h4>
+      <ul class="space-y-1.5 text-xs">
+        <li v-for="hit in item.hitHistory.slice(0, 3)" :key="hit._id" class="flex justify-between items-center opacity-80 hover:opacity-100">
+          <span class="font-bold px-1.5 py-0.5 rounded text-[9px] tracking-tight" :class="getHitTypeClass(hit.type, isStealth)">
+            {{ getHitTypeName(hit.type) }}
+          </span>
+          <span class="font-mono" :class="isStealth ? 'text-slate-600' : 'text-gray-300'">
+            {{ hit.triggerPrice.toFixed(2) }}
+          </span>
+          <span class="opacity-60 font-mono text-[11px]">
+            {{ new Date(hit.happenedAt).toLocaleDateString('en-CA') }}
+          </span>
+        </li>
+      </ul>
     </div>
 
     <div

@@ -33,16 +33,6 @@ const recognizedStockSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
-    // 是否成功
-    isSuccess: {
-      type: Boolean,
-      default: null,
-    },
-    // 達標日期（當 isSuccess 變為 true 時記錄）
-    successDate: {
-      type: Date,
-      default: null,
-    },
     // 來源類型：'user' (使用者自選) 或 'system' (系統推薦)
     source: {
       type: String,

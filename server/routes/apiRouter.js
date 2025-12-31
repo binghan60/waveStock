@@ -68,7 +68,7 @@ function isTradingHours() {
 // 取得建議的快取時間（根據交易時段）
 function getRecommendedCacheTTL() {
   if (isTradingHours()) {
-    return 2500 // 交易時段：2.5秒
+    return 5000 // 交易時段：2.5秒
   } else {
     const now = new Date()
     const taipei = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }))
@@ -236,25 +236,66 @@ router.get('/system-status', (req, res) => {
 
 router.get('/dashboard', async (req, res) => {
   try {
-    // 取得圖片辨識的股票 (MongoDB) - 只取 30 天內的
+    // 1. 取得圖片辨識的股票 (MongoDB) - 只取 30 天內的
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-
     const recognizedStocks = await RecognizedStock.find({
       createdAt: { $gte: thirtyDaysAgo },
     })
       .sort({ createdAt: -1 })
       .limit(100)
 
-    // 合併範例股票和真實辨識股票
-    const allRecognizedStocks = [...recognizedStocks.map((s) => s.toObject())]
-    // 只回傳辨識股票資料，不包含 manualStocks
-    const recognizedResult = allRecognizedStocks.map((stock) => ({
-      ...stock,
-      market: null, // 前端會自行呼叫 /stock-prices 獲取價格
-    }))
+    // 2. 獲取所有相關的觸及歷史紀錄
+    const stockIds = recognizedStocks.map((s) => s._id)
+    const allHitLogs = await StockHitLog.find({ stockId: { $in: stockIds } }).sort({ happenedAt: -1 })
 
-    // 回傳辨識股票資料
+    // 3. 將歷史紀錄按 stockId 分組
+    const logsByStockId = allHitLogs.reduce((acc, log) => {
+      const stockIdStr = log.stockId.toString()
+      if (!acc[stockIdStr]) {
+        acc[stockIdStr] = []
+      }
+      acc[stockIdStr].push(log)
+      return acc
+    }, {})
+
+    // 4. 合併股票資料，並動態產生 isSuccess 狀態
+    const recognizedResult = recognizedStocks.map((stock) => {
+      const stockObject = stock.toObject()
+      const history = logsByStockId[stock._id.toString()] || []
+
+      // --- 動態狀態產生邏輯 ---
+      let derivedIsSuccess = null
+      let successDate = null
+      let updatedAt = stockObject.updatedAt // 預設為文件更新時間
+
+      // 篩選出決定狀態的事件 (成功或失敗)，並按時間排序
+      const statusEvents = history
+        .filter((h) => h.type === 'shortTerm' || h.type === 'swap')
+        .sort((a, b) => new Date(b.happenedAt) - new Date(a.happenedAt))
+
+      if (statusEvents.length > 0) {
+        const latestEvent = statusEvents[0]
+        if (latestEvent.type === 'shortTerm') {
+          derivedIsSuccess = true
+          successDate = latestEvent.happenedAt // 設置成功日期
+        } else if (latestEvent.type === 'swap') {
+          derivedIsSuccess = false
+          updatedAt = latestEvent.happenedAt // 用失敗日期覆蓋更新日期，以供前端顯示
+        }
+      }
+
+      return {
+        ...stockObject,
+        market: null, // 前端會自行呼叫 /stock-prices 獲取價格
+        hitHistory: history, // 附加完整的觸及歷史
+        isSuccess: derivedIsSuccess, // 附加動態計算的狀態
+        successDate: successDate, // 附加成功日期
+        updatedAt: updatedAt, // 附加預設或被覆蓋的更新日期
+      }
+    })
+
+    // 5. 回傳最終結果
     res.json({
       recognizedStocks: recognizedResult,
     })
@@ -444,125 +485,6 @@ const chunkArray = (arr, size) => {
   return Array.from({ length: Math.ceil(arr.length / size) }, (v, i) => arr.slice(i * size, i * size + size))
 }
 
-router.post('/check-targets', async (req, res) => {
-  try {
-    console.log('🎯 開始檢查所有股票是否觸及短線目標 (使用即時行情)...')
-
-    // 1. 找出所有未達標且有設定目標的股票
-    // ⚠️ 強烈建議加回過濾條件，避免抓到 shortTermProfit 是 null 或 undefined 的資料
-    const stocks = await RecognizedStock.find({
-      // ✅ 修改處：只要是 null 或 false 都會被選出來
-      isSuccess: { $in: [null, false] },
-      // 獲利目標必須存在且有值
-      shortTermProfit: { $exists: true, $ne: null },
-    })
-    console.log(stocks)
-
-    if (stocks.length === 0) {
-      return res.json({
-        success: true,
-        message: '沒有待檢查的股票',
-        checked: 0,
-        updated: 0,
-      })
-    }
-
-    console.log(`📊 找到 ${stocks.length} 支待檢查的股票`)
-
-    let updatedCount = 0
-    const results = [] // 紀錄檢查結果
-
-    // 2. 將股票分組，每組 10 支 (因為我們會同時查 tse/otc，URL 會變長，縮小每組數量比較安全)
-    const chunks = chunkArray(stocks, 10)
-
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i]
-
-      // 3. 雙路查詢：同時組出 tse_xxxx.tw 和 otc_xxxx.tw
-      // 這樣無論它是上市還是上櫃，API 都會回傳正確的那一個
-      const queryStr = chunk.map((s) => `tse_${s.code}.tw|otc_${s.code}.tw`).join('|')
-
-      const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${queryStr}`
-
-      try {
-        const response = await axios.get(`${url}&_=${Date.now()}`, {
-          headers: { 'User-Agent': 'Mozilla/5.0' },
-        })
-
-        const msgArray = response.data.msgArray || []
-
-        // 4. 遍歷回傳資料
-        for (const stockInfo of msgArray) {
-          // 過濾無效資料 (有些暫停交易或剛開盤沒最高價的)
-          if (!stockInfo.h || stockInfo.h === '-' || stockInfo.h === '0.00') continue
-
-          const code = stockInfo.c // 股票代號
-          const currentHigh = parseFloat(stockInfo.h) // 當日最高
-          const currentPrice = parseFloat(stockInfo.z) // 現價
-
-          // 找到對應的 DB 資料 (這裡要用 code 比對，因為回傳的不一定照順序)
-          const dbStock = stocks.find((s) => s.code === code)
-
-          // 防止重複處理 (有極小機率 tse 和 otc 都回傳，雖然罕見)
-          if (!dbStock || results.find((r) => r.code === code)) continue
-
-          const targetPrice = parseFloat(dbStock.shortTermProfit)
-
-          console.log(`🔍 ${code} 最高: ${currentHigh} / 目標: ${targetPrice}`)
-
-          let isSuccess = false
-          let reason = ''
-
-          // 5. 判斷邏輯
-          if (currentHigh >= targetPrice) {
-            isSuccess = true
-            reason = `最高價 ${currentHigh} 已觸及目標 ${targetPrice}`
-            console.log(`✅ ${code} 達標！`)
-
-            // 更新 DB
-            dbStock.isSuccess = true
-            dbStock.successDate = new Date()
-            await dbStock.save()
-            updatedCount++
-          } else {
-            reason = `尚未觸及 (最高: ${currentHigh})`
-          }
-
-          results.push({
-            code,
-            success: isSuccess,
-            highPrice: currentHigh,
-            currentPrice,
-            targetPrice,
-            reason,
-          })
-        }
-      } catch (err) {
-        console.error(`❌ 第 ${i + 1} 組查詢失敗:`, err.message)
-      }
-
-      // 每批次中間休息 1 秒
-      if (i < chunks.length - 1) {
-        await new Promise((r) => setTimeout(r, 1000))
-      }
-    }
-
-    console.log(`🎉 檢查完成！更新 ${updatedCount} 支`)
-
-    // 迴圈結束後才回傳
-    res.json({
-      success: true,
-      message: '檢查完成',
-      checked: stocks.length, // 這裡是 DB 找到的總數
-      updated: updatedCount,
-      results, // 這裡是實際有查到資料的列表
-    })
-  } catch (error) {
-    console.error('❌ 系統錯誤:', error.message)
-    res.status(500).json({ success: false, message: error.message })
-  }
-})
-// 還沒有 //觸及所有紀錄
 const parseTargetPrice = (valStr, type) => {
   if (!valStr) return null
 
@@ -586,14 +508,13 @@ const parseTargetPrice = (valStr, type) => {
 }
 
 // ==========================================
-// 🚀 API 主程式
+// 🚀 合併後的主要 API
 // ==========================================
-
-router.post('/check-levels', async (req, res) => {
+router.post('/check-stock-status', async (req, res) => {
   try {
-    console.log('🎯 [排程啟動] 開始檢查所有股票位階 (支撐/短線/波段/換股)...')
+    console.log('🎯 [排程啟動] 開始檢查所有股票狀態 (支撐/短線/波段/換股)...')
 
-    // 1. 找出設定了目標的股票
+    // 1. 找出所有設定了目標的股票
     const stocks = await RecognizedStock.find({
       $or: [{ support: { $ne: null } }, { shortTermProfit: { $ne: null } }, { waveProfit: { $ne: null } }, { swapRef: { $ne: null } }],
     })
@@ -602,20 +523,16 @@ router.post('/check-levels', async (req, res) => {
       return res.json({ success: true, message: '沒有設定目標的股票', results: [] })
     }
 
-    // 計算今天起始時間 (用於防止當日重複寫入 Log)
     const startOfToday = new Date()
     startOfToday.setHours(0, 0, 0, 0)
 
     let newLogCount = 0
-    const chunks = chunkArray(stocks, 10) // 10支一組
+    const chunks = chunkArray(stocks, 10)
 
     console.log(`📊 共 ${stocks.length} 支股票，分為 ${chunks.length} 組檢查`)
 
-    // 2. 開始分組迴圈
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]
-
-      // 雙路查詢 (TSE + OTC)
       const queryStr = chunk.map((s) => `tse_${s.code}.tw|otc_${s.code}.tw`).join('|')
       const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${queryStr}`
 
@@ -627,33 +544,25 @@ router.post('/check-levels', async (req, res) => {
         const msgArray = response.data.msgArray || []
 
         for (const stockInfo of msgArray) {
-          // 基本資料完整性檢查 (只要有價格就跑)
           if (!stockInfo.h || stockInfo.h === '-' || !stockInfo.l || stockInfo.l === '-') continue
 
-          // ⚠️ 已移除日期比對，請確保 Cron Job 只在盤中執行
-
           const code = stockInfo.c
-          const currentHigh = parseFloat(stockInfo.h) // 看漲用
-          const currentLow = parseFloat(stockInfo.l) // 看跌用
+          const currentHigh = parseFloat(stockInfo.h)
+          const currentLow = parseFloat(stockInfo.l)
 
           const dbStock = stocks.find((s) => s.code === code)
           if (!dbStock) continue
 
-          // ======================================
-          // 內部函式：檢查並寫入 Log
-          // ======================================
+          // 內部函式：檢查並記錄
           const checkAndLog = async (type, targetValStr, compareVal, compareType) => {
             if (!targetValStr) return
 
-            // 解析門檻
             const threshold = parseTargetPrice(targetValStr, type)
             if (threshold === null) return
 
-            // 判斷是否觸及 (gte: >=, lte: <=)
             const isHit = compareType === 'gte' ? compareVal >= threshold : compareVal <= threshold
 
             if (isHit) {
-              // 防重複檢查：今天是否已經紀錄過這種類型？
               const existLog = await StockHitLog.findOne({
                 stockId: dbStock._id,
                 type: type,
@@ -663,7 +572,6 @@ router.post('/check-levels', async (req, res) => {
               if (!existLog) {
                 console.log(`✅ [${code}] ${type} 觸發！現價 ${compareVal} ${compareType === 'gte' ? '>=' : '<='} 門檻 ${threshold}`)
 
-                // 1. 寫入 Log
                 await StockHitLog.create({
                   stockId: dbStock._id,
                   code: dbStock.code,
@@ -671,41 +579,25 @@ router.post('/check-levels', async (req, res) => {
                   targetPrice: threshold,
                   triggerPrice: compareVal,
                 })
-
-                // 2. (可選) 更新主表狀態
-                if (type === 'shortTerm') dbStock.isSuccess = true
-                await dbStock.save()
-
                 newLogCount++
               }
             }
           }
 
-          // ======================================
           // 執行四項檢查
-          // ======================================
-
-          // 1. 支撐 (看 Low <= 門檻)
           await checkAndLog('support', dbStock.support, currentLow, 'lte')
-
-          // 2. 換股 (看 Low <= 門檻)
           await checkAndLog('swap', dbStock.swapRef, currentLow, 'lte')
-
-          // 3. 短線 (看 High >= 門檻)
           await checkAndLog('shortTerm', dbStock.shortTermProfit, currentHigh, 'gte')
-
-          // 4. 波段 (看 High >= 門檻)
           await checkAndLog('wave', dbStock.waveProfit, currentHigh, 'gte')
         }
       } catch (err) {
         console.error(`❌ 第 ${i + 1} 組 API 查詢失敗:`, err.message)
       }
 
-      // 休息 1 秒
       if (i < chunks.length - 1) await new Promise((r) => setTimeout(r, 1000))
     }
 
-    console.log(`🎉 檢查完成！今日新增 ${newLogCount} 筆觸價紀錄`)
+    console.log(`🎉 檢查完成！新增 ${newLogCount} 筆觸價紀錄。`)
 
     res.json({
       success: true,
