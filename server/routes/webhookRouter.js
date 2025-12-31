@@ -5,66 +5,9 @@ import axios from 'axios'
 import FormData from 'form-data'
 import sharp from 'sharp' // 記得要留著 sharp 用來壓縮
 import RecognizedStock from '../models/RecognizedStock.js'
+import { fetchStockData } from '../services/stockService.js'
 
-// 從證交所獲取單一股票的即時股價（支援重試機制）
-async function fetchCurrentStockPrice(stockCode, retryCount = 0) {
-  const baseUrl = 'https://mis.twse.com.tw/stock/api/getStockInfo.jsp'
-  const MAX_RETRIES = 2
-  const RETRY_DELAY = 1000 // 1秒
-
-  const queryParams = `tse_${stockCode}.tw|otc_${stockCode}.tw`
-  const url = `${baseUrl}?json=1&ex_ch=${queryParams}&_=${Date.now()}`
-
-  try {
-    const response = await axios.get(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      timeout: 10000,
-    })
-
-    const msgArray = response.data.msgArray
-    if (!msgArray || msgArray.length === 0) {
-      console.log('⚠️ API 回傳空資料')
-      return null
-    }
-
-    // 1. 找出有效的資料 (過濾掉空的 OTC 或 TSE)
-    const msg = msgArray.find((m) => m.c && m.c !== '' && m.n && m.n !== '')
-    if (!msg) return null
-
-    let currentPrice = msg.z
-
-    // 2. 如果沒有成交價，找 買價 > 賣價 > 昨收
-    if (currentPrice === '-') {
-      if (msg.b && msg.b !== '-') {
-        currentPrice = msg.b.split('_')[0]
-      } else if (msg.a && msg.a !== '-') {
-        currentPrice = msg.a.split('_')[0]
-      } else {
-        currentPrice = msg.y
-      }
-    }
-
-    // 🔥 3. 新增：格式化邏輯 (保留小數第一位)
-    // 確保是數字才進行格式化，否則原樣回傳 (例如 null 或錯誤訊息)
-    if (currentPrice && !isNaN(parseFloat(currentPrice))) {
-      // parseFloat 轉成數字，toFixed(1) 四捨五入保留一位並轉回字串
-      return parseFloat(currentPrice).toFixed(1) 
-    }
-
-    return currentPrice
-  } catch (error) {
-    console.error(`❌ 獲取股價失敗:`, error.message)
-    if (retryCount < MAX_RETRIES) {
-      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (retryCount + 1)))
-      return fetchCurrentStockPrice(stockCode, retryCount + 1)
-    }
-    return null
-  }
-}
-
-// 如果你還沒申請 Key，暫時用 'helloworld' (這是官方測試 Key，但不保證穩定)
-// 強烈建議去 https://ocr.space/ocrapi 申請一個 (免費且只需填 Email)
-const OCR_API_KEY = process.env.OCR_API_KEY // 建議申請一個，或暫時用 'helloworld'
+const OCR_API_KEY = process.env.OCR_API_KEY
 
 export default (config) => {
   const router = express.Router()
@@ -148,11 +91,19 @@ async function handleImageMessage(event, client) {
     }
 
     // 💾 儲存到資料庫
+    let currentPrice = null
     try {
       // 🔥 獲取當下股價
       console.log('📈 正在獲取股價...')
-      const currentPrice = await fetchCurrentStockPrice(stockData.code)
-      if (currentPrice) {
+      const stockInfoList = await fetchStockData(stockData.code)
+      if (stockInfoList && stockInfoList.length > 0) {
+        // 保留一位小數的格式化邏輯
+        const rawPrice = stockInfoList[0].currentPrice
+        if (rawPrice && !isNaN(parseFloat(rawPrice))) {
+          currentPrice = parseFloat(rawPrice).toFixed(1)
+        } else {
+          currentPrice = rawPrice
+        }
         console.log(`✅ 成功獲取股價: ${currentPrice}`)
       }
 
@@ -200,13 +151,7 @@ async function handleImageMessage(event, client) {
     }
 
     // 獲取當下股價用於顯示
-    let displayPrice = '無法取得'
-    try {
-      const price = await fetchCurrentStockPrice(stockData.code)
-      displayPrice = price || '無法取得'
-    } catch (e) {
-      console.log('⚠️ 顯示用股價取得失敗')
-    }
+    let displayPrice = currentPrice || '無法取得'
 
     const replyText = `📊 分析結果
 ──────────────
