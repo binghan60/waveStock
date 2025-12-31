@@ -77,7 +77,15 @@ const isLimitHit = computed(() => {
 
     <div v-if="item.market" class="space-y-3">
       <div class="flex items-end gap-3">
-        <div class="text-4xl leading-none tabular-nums tracking-tight" :class="details.colorClass">
+        <div 
+          class="text-4xl leading-none tabular-nums tracking-tight transition-all duration-500" 
+          :class="[
+            details.colorClass,
+            isLimitHit && !isStealth
+              ? (details.isUp ? 'bg-red-500 text-white px-3 py-1 rounded-lg' : 'bg-green-500 text-white px-3 py-1 rounded-lg')
+              : ''
+          ]"
+        >
           {{ formatPrice(item.market.currentPrice) }}
         </div>
         <div class="flex flex-col text-xs font-medium mb-1" :class="details.colorClass">

@@ -254,8 +254,13 @@ const priceChart = computed(() => {
     >
       <div class="flex items-end gap-3">
         <div
-          class="text-4xl leading-none tabular-nums tracking-tight"
-          :class="marketDetails.colorClass"
+          class="text-4xl leading-none tabular-nums tracking-tight transition-all duration-500"
+          :class="[
+            marketDetails.colorClass,
+            isLimitHit && !isStealth
+              ? (marketDetails.isUp ? 'bg-red-500 text-white px-3 py-2 rounded-md' : 'bg-green-500 text-white px-3 py-2 rounded-md')
+              : ''
+          ]"
         >
           {{ formatPrice(item.market.currentPrice) }}
         </div>
