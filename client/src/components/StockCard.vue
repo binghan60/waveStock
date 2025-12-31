@@ -11,6 +11,10 @@ const emit = defineEmits(['remove', 'togglePin'])
 // 使用 Composable 計算股票詳情 (價差、漲跌幅、顏色)
 const { details } = useStockDetails(toRef(props, 'item'), toRef(props, 'isStealth'))
 
+const isLimitHit = computed(() => {
+  return details.value.rawAbsPercent >= 9.5
+})
+
 </script>
 
 <template>
@@ -20,6 +24,8 @@ const { details } = useStockDetails(toRef(props, 'item'), toRef(props, 'isStealt
       isStealth
         ? 'bg-white border-gray-200 shadow-sm'
         : 'bg-zinc-900 border-zinc-800 hover:border-zinc-600 hover:bg-zinc-800/80 hover:-translate-y-1 hover:shadow-xl',
+      { 'limit-up-animation': isLimitHit && details.isUp && !isStealth },
+      { 'limit-down-animation': isLimitHit && details.isDown && !isStealth }
     ]"
   >
     <div
@@ -101,3 +107,39 @@ const { details } = useStockDetails(toRef(props, 'item'), toRef(props, 'isStealt
     </div>
   </div>
 </template>
+
+<style scoped>
+@keyframes limit-glow-red {
+  0%, 100% {
+    background-color: rgba(239, 68, 68, 0.05);
+    border-color: rgba(239, 68, 68, 0.7);
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    background-color: rgba(239, 68, 68, 0.15);
+    border-color: rgba(255, 100, 100, 1);
+    box-shadow: 0 0 25px rgba(255, 100, 100, 0.6);
+  }
+}
+
+@keyframes limit-glow-green {
+  0%, 100% {
+    background-color: rgba(34, 197, 94, 0.05);
+    border-color: rgba(34, 197, 94, 0.7);
+    box-shadow: 0 0 15px rgba(34, 197, 94, 0.4);
+  }
+  50% {
+    background-color: rgba(34, 197, 94, 0.15);
+    border-color: rgba(74, 222, 128, 1);
+    box-shadow: 0 0 25px rgba(74, 222, 128, 0.6);
+  }
+}
+
+.limit-up-animation {
+  animation: limit-glow-red 2s ease-in-out infinite;
+}
+
+.limit-down-animation {
+  animation: limit-glow-green 2s ease-in-out infinite;
+}
+</style>
