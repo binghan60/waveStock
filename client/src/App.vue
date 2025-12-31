@@ -1,386 +1,90 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import axios from 'axios'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useToast } from 'vue-toastification'
 import StockCard from './components/StockCard.vue'
 import RecognizedStockCard from './components/RecognizedStockCard.vue'
+import StockCardSkeleton from './components/StockCardSkeleton.vue'
+import PriceEditModal from './components/PriceEditModal.vue'
+import ConfirmModal from './components/ConfirmModal.vue'
+import { useStockFormatter } from '@/composables/useStockFormatter'
+import { useStockStore } from '@/stores/stockStore'
 
-// --- Tab 狀態 ---
-const activeTab = ref('dashboard') // 'dashboard' or 'dataTable'
+const toast = useToast()
+const { formatPrice: formatStockPrice } = useStockFormatter()
+const stockStore = useStockStore()
 
-// API 配置
-const API_URL = import.meta.env.VITE_API_PATH
-const stocks = ref([])
-const recognizedStocks = ref([])
+// 使用 storeToRefs 保持響應性
+const { 
+  pinnedStocks, 
+  unpinnedManualStocks: unpinnedStocks, 
+  unpinnedRecognizedStocks, 
+  processedRecognizedStocks: recognizedStocks, 
+  isLoading, 
+  lastUpdated, 
+  isStealth,
+  pinnedList,
+  searchQuery,
+  sortConfig,
+  activeTab
+} = storeToRefs(stockStore)
+
+const { 
+  addStock, 
+  removeStock, 
+  removeRecognizedStock, 
+  updateRecognizedPrice, 
+  togglePin, 
+  toggleStealth, 
+  triggerBot,
+  getLimitHitStatus,
+  startAutoRefresh,
+  stopAutoRefresh,
+  setSearchQuery,
+  toggleSort,
+  setActiveTab
+} = stockStore
+
+// --- Modal 狀態 ---
+const isPriceModalVisible = ref(false)
+const editingStock = ref(null)
+
+// UI Input
 const inputSymbol = ref('')
-const isLoading = ref(false)
-const lastUpdated = ref('')
-const isStealth = ref(false)
-let timer = null
-
-// --- 置頂功能 ---
-
-// 置頂清單的響應式狀態
-const pinnedList = ref([])
-
-// 從 localStorage 載入置頂清單
-const loadPinnedStocks = () => {
-  try {
-    const stored = localStorage.getItem('pinned-stocks')
-    pinnedList.value = stored ? JSON.parse(stored) : []
-  } catch (e) {
-    console.error('Failed to load pinned stocks from localStorage:', e)
-    pinnedList.value = []
-  }
-}
-
-// 儲存置頂清單到 localStorage
-const savePinnedStocks = () => {
-  try {
-    localStorage.setItem('pinned-stocks', JSON.stringify(pinnedList.value))
-    console.log('💾 置頂清單已儲存:', pinnedList.value)
-  } catch (e) {
-    console.error('Failed to save pinned stocks to localStorage:', e)
-  }
-}
-
-// 切換置頂狀態
-const togglePin = (symbol) => {
-  const index = pinnedList.value.indexOf(symbol)
-
-  if (index > -1) {
-    // 取消置頂
-    pinnedList.value.splice(index, 1)
-    console.log(`📍 取消置頂: ${symbol}`)
-  } else {
-    // 加入置頂
-    pinnedList.value.push(symbol)
-    console.log(`📌 置頂: ${symbol}`)
-  }
-
-  savePinnedStocks()
-}
-
-// --- Computed: 自動分類邏輯 ---
-
-const manualStocks = computed(() => {
-  return stocks.value.filter((item) => item.type === 'manual' || !item.type)
-})
-
-// 置頂股票清單（合併手動新增和辨識股票）
-const pinnedStocks = computed(() => {
-  // 從手動新增的股票中篩選置頂的
-  const pinnedManual = manualStocks.value
-    .filter((stock) => pinnedList.value.includes(stock.symbol))
-    .map((stock) => ({ ...stock, isPinned: true, source: 'manual' }))
-
-  // 從辨識股票中篩選置頂的
-  const pinnedRecognized = recognizedStocks.value
-    .filter((stock) => pinnedList.value.includes(stock.code))
-    .map((stock) => ({
-      ...stock,
-      symbol: stock.code, // 統一使用 symbol 欄位
-      isPinned: true,
-      source: 'recognized',
-    }))
-
-  return [...pinnedManual, ...pinnedRecognized]
-})
-
-// 非置頂的手動股票清單
-const unpinnedStocks = computed(() => {
-  return manualStocks.value
-    .filter((stock) => !pinnedList.value.includes(stock.symbol))
-    .map((stock) => ({ ...stock, isPinned: false }))
-})
-
-// 非置頂的辨識股票清單
-const unpinnedRecognizedStocks = computed(() => {
-  return recognizedStocks.value.filter((stock) => !pinnedList.value.includes(stock.code))
-})
-
-// --- 股價格式化函數 ---
-// 根據股價區間動態調整顯示位數
-const formatStockPrice = (price) => {
-  if (!price || price === '-') return '-'
-
-  const numPrice = parseFloat(price)
-  if (isNaN(numPrice)) return price
-
-  if (numPrice < 10) {
-    return numPrice.toFixed(2) // < 10: 顯示 2 位小數
-  } else if (numPrice < 50) {
-    return numPrice.toFixed(2) // 10-50: 顯示 2 位小數
-  } else if (numPrice < 100) {
-    return numPrice.toFixed(1) // 50-100: 顯示 1 位小數
-  } else if (numPrice < 500) {
-    return numPrice.toFixed(1) // 100-500: 顯示 1 位小數
-  } else if (numPrice < 1000) {
-    return numPrice.toFixed(0) // 500-1000: 顯示整數
-  } else {
-    return numPrice.toFixed(0) // > 1000: 顯示整數
-  }
-}
 
 // --- API 互動 ---
-// 從 localStorage 獲取自選清單（辨識股票的星星標記）
-const getFavorites = () => {
-  try {
-    const stored = localStorage.getItem('stock-favorites')
-    return stored ? JSON.parse(stored) : []
-  } catch (e) {
-    console.error('Failed to load favorites from localStorage:', e)
-    return []
+const editInitialPrice = (stock) => {
+  editingStock.value = stock
+  isPriceModalVisible.value = true
+}
+
+const handleCloseModal = () => {
+  isPriceModalVisible.value = false
+  editingStock.value = null
+}
+
+const handleSavePrice = async (newPrice) => {
+  if (!editingStock.value) return
+  const success = await updateRecognizedPrice(editingStock.value._id, newPrice)
+  if (success) {
+    handleCloseModal()
   }
 }
 
-// 儲存自選清單到 localStorage
-const saveFavorites = (favorites) => {
-  try {
-    localStorage.setItem('stock-favorites', JSON.stringify(favorites))
-  } catch (e) {
-    console.error('Failed to save favorites to localStorage:', e)
-  }
-}
-
-// 從 localStorage 獲取個人自選清單（手動新增的股票）
-const getManualStocks = () => {
-  try {
-    const stored = localStorage.getItem('manual-stocks')
-    return stored ? JSON.parse(stored) : []
-  } catch (e) {
-    console.error('Failed to load manual stocks from localStorage:', e)
-    return []
-  }
-}
-
-// 儲存個人自選清單到 localStorage
-const saveManualStocks = (stocks) => {
-  try {
-    localStorage.setItem('manual-stocks', JSON.stringify(stocks))
-  } catch (e) {
-    console.error('Failed to save manual stocks to localStorage:', e)
-  }
-}
-
-const fetchData = async () => {
-  try {
-    // 從 localStorage 讀取手動新增的股票
-    const manualStocksLocal = getManualStocks()
-
-    // 從 localStorage 讀取自選清單
-    const favorites = getFavorites()
-
-    // 從 API 只獲取辨識股票
-    const res = await axios.get(`${API_URL}/dashboard`)
-
-    console.log('📊 Dashboard API 回傳:', res.data)
-
-    // 收集所有需要查詢價格的股票代號
-    const manualSymbols = manualStocksLocal.map((s) => s.symbol)
-    const recognizedSymbols = res.data.recognizedStocks
-      ? res.data.recognizedStocks.map((s) => s.code)
-      : []
-    const allSymbols = [...new Set([...manualSymbols, ...recognizedSymbols])] // 去重
-
-    // 如果有股票代號，去 API 獲取即時價格
-    let prices = []
-    if (allSymbols.length > 0) {
-      try {
-        const priceRes = await axios.post(`${API_URL}/stock-prices`, { symbols: allSymbols })
-        prices = priceRes.data || []
-      } catch (err) {
-        console.error('獲取股價失敗:', err)
-      }
-    }
-
-    // 合併手動新增的股票與即時價格
-    stocks.value = manualStocksLocal.map((stock) => {
-      const priceData = prices.find((p) => p.symbol === stock.symbol)
-      return {
-        ...stock,
-        market: priceData || null,
-      }
-    })
-
-    // 合併辨識股票的即時價格與置頂狀態
-    if (res.data.recognizedStocks) {
-      recognizedStocks.value = res.data.recognizedStocks.map((stock) => {
-        const priceData = prices.find((p) => p.symbol === stock.code)
-        return {
-          ...stock,
-          isPinned: pinnedList.value.includes(stock.code),
-          market: priceData || null,
-        }
-      })
-      console.log('✅ 圖片辨識股票數量:', recognizedStocks.value.length)
-    }
-
-    lastUpdated.value = new Date().toLocaleTimeString('zh-TW', { hour12: false })
-  } catch (e) {
-    console.error('Fetch Dashboard Error:', e)
-  }
-}
-
-// 統一重新整理函數
-const refreshAll = async () => {
-  await fetchData() // dashboard API 已經包含所有資料
-}
-
-const addStock = async () => {
-  const symbol = inputSymbol.value.trim().toUpperCase()
-  if (!symbol || isLoading.value) return
-
-  isLoading.value = true
-  try {
-    // 從 localStorage 讀取現有股票
-    const manualStocksLocal = getManualStocks()
-
-    // 檢查是否已存在
-    const exists = manualStocksLocal.find((s) => s.symbol === symbol)
-    if (exists) {
-      alert('此股票已在清單中')
-      isLoading.value = false
-      return
-    }
-
-    // 新增股票到 localStorage
-    const newStock = {
-      _id: `manual-${Date.now()}`,
-      id: Date.now(),
-      symbol: symbol,
-      type: 'manual',
-      createdAt: new Date().toISOString(),
-    }
-
-    manualStocksLocal.push(newStock)
-    saveManualStocks(manualStocksLocal)
-
-    inputSymbol.value = ''
-    await fetchData() // 重新抓取資料（包含股價）
-  } catch (e) {
-    alert('新增失敗')
-    console.error('Add Stock Error:', e)
-  } finally {
-    isLoading.value = false
-  }
-}
-
-const triggerBot = async () => {
-  try {
-    await axios.post(`${API_URL}/bot-trigger`)
-    await fetchData()
-  } catch (e) {
-    console.error('Bot Trigger Error:', e)
-    alert('Bot trigger 功能暫時不可用')
-  }
-}
-
-const removeStock = async (id) => {
-  if (!confirm('確定移除此監控項目?')) return
-  try {
-    // 從 localStorage 讀取並過濾掉該股票
-    let manualStocksLocal = getManualStocks()
-    manualStocksLocal = manualStocksLocal.filter((s) => s._id !== id && s.id !== id)
-    saveManualStocks(manualStocksLocal)
-
-    // 立即更新 UI
-    await fetchData() // dashboard API 已經包含所有資料
-  } catch (e) {
-    console.error('Delete Stock Error:', e)
-  }
-}
-
-const removeRecognizedStock = async (id) => {
-  if (!confirm('確定刪除此辨識記錄?')) return
-  try {
-    await axios.delete(`${API_URL}/recognized-stocks/${id}`)
-    recognizedStocks.value = recognizedStocks.value.filter((s) => s._id !== id)
-  } catch (e) {
-    console.error('Delete Recognized Error:', e)
-  }
-}
-
-const toggleStealth = () => {
-  isStealth.value = !isStealth.value
-  localStorage.setItem('stealth-mode', isStealth.value ? '1' : '0')
-}
-
-// --- 智慧刷新邏輯 ---
-
-// 判斷是否為交易時段
-const isTradingHours = () => {
-  const now = new Date()
-  const day = now.getDay() // 0=週日, 6=週六
-  const hour = now.getHours()
-  const minute = now.getMinutes()
-  const time = hour * 60 + minute
-
-  // 週末不交易
-  if (day === 0 || day === 6) return false
-
-  // 交易時間：09:00-13:30
-  const marketOpen = 9 * 60
-  const marketClose = 13 * 60 + 30
-
-  return time >= marketOpen && time <= marketClose
-}
-
-// 取得建議的刷新間隔（毫秒）
-const getRefreshInterval = () => {
-  if (isTradingHours()) {
-    return 5000 // 交易時段：5秒
-  } else {
-    const now = new Date()
-    const hour = now.getHours()
-
-    // 盤後時段 13:30-18:00：2分鐘
-    if (hour >= 13 && hour < 18) {
-      return 120000
-    }
-    // 非交易時段：5分鐘
-    return 300000
-  }
-}
-
-// 動態調整刷新間隔
-const setupDynamicRefresh = () => {
-  const updateTimer = () => {
-    if (timer) {
-      clearInterval(timer)
-    }
-
-    const interval = getRefreshInterval()
-    const intervalText = interval >= 60000 ? `${interval / 60000}分鐘` : `${interval / 1000}秒`
-    console.log(`📡 刷新間隔: ${intervalText} (${isTradingHours() ? '交易時段' : '非交易時段'})`)
-
-    timer = setInterval(refreshAll, interval)
-  }
-
-  updateTimer()
-
-  // 每分鐘檢查一次是否需要調整刷新間隔
-  setInterval(updateTimer, 60000)
+const handleAddStock = async () => {
+  if (!inputSymbol.value) return
+  await addStock(inputSymbol.value)
+  inputSymbol.value = ''
 }
 
 // --- Lifecycle ---
 
 onMounted(() => {
-  isStealth.value = localStorage.getItem('stealth-mode') === '1'
-
-  // 載入置頂清單
-  loadPinnedStocks()
-
-  refreshAll()
-
-  // 使用智慧刷新邏輯
-  setupDynamicRefresh()
+  startAutoRefresh()
 })
 
 onUnmounted(() => {
-  if (timer) {
-    clearInterval(timer)
-    timer = null
-  }
+  stopAutoRefresh()
 })
 </script>
 
@@ -438,7 +142,7 @@ onUnmounted(() => {
       <div class="mb-8">
         <div class="flex border-b" :class="isStealth ? 'border-slate-200' : 'border-zinc-800'">
           <button
-            @click="activeTab = 'dashboard'"
+            @click="setActiveTab('dashboard')"
             class="px-6 py-3 text-sm font-bold tracking-wider uppercase transition-all"
             :class="[
               activeTab === 'dashboard'
@@ -453,7 +157,7 @@ onUnmounted(() => {
             戰情室
           </button>
           <button
-            @click="activeTab = 'dataTable'"
+            @click="setActiveTab('dataTable')"
             class="px-6 py-3 text-sm font-bold tracking-wider uppercase transition-all"
             :class="[
               activeTab === 'dataTable'
@@ -475,7 +179,7 @@ onUnmounted(() => {
         <!-- Dashboard / 戰情室 -->
         <div v-if="activeTab === 'dashboard'">
           <!-- 置頂區域 -->
-          <section v-if="pinnedStocks.length > 0" class="mb-14">
+          <section v-if="pinnedStocks.length > 0 || isLoading" class="mb-14">
             <div class="flex items-center gap-3 mb-6 pl-1">
               <h2 class="text-xl font-bold tracking-tight">
                 {{ isStealth ? 'PINNED_WATCHLIST' : '📌 置頂監控' }}
@@ -493,10 +197,15 @@ onUnmounted(() => {
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              <template v-for="item in pinnedStocks" :key="item._id || item.id">
+              <!-- Skeletons -->
+              <template v-if="isLoading && pinnedStocks.length === 0">
+                <StockCardSkeleton v-for="i in 3" :key="i" :is-stealth="isStealth" />
+              </template>
+
+              <template v-else v-for="item in pinnedStocks" :key="item._id || item.id">
                 <!-- 手動新增的股票 -->
                 <StockCard
-                  v-if="item.source === 'manual'"
+                  v-if="item.listType === 'manual'"
                   :item="item"
                   :is-stealth="isStealth"
                   @remove="removeStock"
@@ -504,7 +213,7 @@ onUnmounted(() => {
                 />
                 <!-- 辨識的股票 -->
                 <RecognizedStockCard
-                  v-else-if="item.source === 'recognized'"
+                  v-else-if="item.listType === 'recognized'"
                   :item="item"
                   :is-stealth="isStealth"
                   @remove="removeRecognizedStock"
@@ -533,8 +242,13 @@ onUnmounted(() => {
               </div>
             </div>
 
+            <!-- Skeletons for Recognized -->
+            <div v-if="isLoading && unpinnedRecognizedStocks.length === 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+               <StockCardSkeleton v-for="i in 3" :key="`skel-rec-${i}`" :is-stealth="isStealth" />
+            </div>
+
             <div
-              v-if="unpinnedRecognizedStocks.length === 0"
+              v-else-if="unpinnedRecognizedStocks.length === 0"
               class="py-12 text-center border-2 border-dashed rounded-2xl transition-colors"
               :class="
                 isStealth ? 'border-slate-200 text-slate-400' : 'border-zinc-800 text-zinc-600'
@@ -543,7 +257,7 @@ onUnmounted(() => {
               <p class="text-sm font-medium">No records found.</p>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               <RecognizedStockCard
                 v-for="item in unpinnedRecognizedStocks"
                 :key="item._id"
@@ -559,7 +273,7 @@ onUnmounted(() => {
             <div class="relative flex-1">
               <input
                 v-model="inputSymbol"
-                @keyup.enter="addStock"
+                @keyup.enter="handleAddStock"
                 :placeholder="isStealth ? 'Query identifier...' : '輸入代號加入監控 (如 2330)'"
                 class="w-full px-5 py-3 rounded-xl border outline-none transition-all"
                 :class="
@@ -570,7 +284,7 @@ onUnmounted(() => {
               />
             </div>
             <button
-              @click="addStock"
+              @click="handleAddStock"
               :disabled="isLoading"
               class="px-8 py-3 rounded-xl font-black transition-all active:scale-95 disabled:opacity-50"
               :class="
@@ -601,15 +315,20 @@ onUnmounted(() => {
                 </span>
               </div>
 
+              <!-- Skeletons for Manual -->
+              <div v-if="isLoading && unpinnedStocks.length === 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                 <StockCardSkeleton v-for="i in 4" :key="`skel-man-${i}`" :is-stealth="isStealth" />
+              </div>
+
               <div
-                v-if="unpinnedStocks.length === 0 && pinnedStocks.length === 0"
+                v-else-if="unpinnedStocks.length === 0 && pinnedStocks.length === 0"
                 class="py-12 text-center border-2 border-dashed rounded-2xl"
                 :class="isStealth ? 'border-slate-200' : 'border-zinc-800'"
               >
                 <p class="text-sm opacity-40">Watchlist is empty.</p>
               </div>
 
-              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 <StockCard
                   v-for="item in unpinnedStocks"
                   :key="item._id || item.id"
@@ -625,25 +344,43 @@ onUnmounted(() => {
 
         <!-- Data Table / 戰果榜 -->
         <div v-if="activeTab === 'dataTable'">
-          <div class="mb-6">
-            <div class="flex items-center gap-3 mb-4">
-              <h2 class="text-2xl font-bold tracking-tight">
-                {{ isStealth ? 'RECOGNITION_RECORDS' : '📊 圖片辨識戰果榜' }}
-              </h2>
-              <span
-                class="px-3 py-1 rounded-full text-xs font-mono font-bold"
+          <div class="flex justify-between items-end mb-6">
+            <div>
+              <div class="flex items-center gap-3 mb-2">
+                <h2 class="text-2xl font-bold tracking-tight">
+                  {{ isStealth ? 'RECOGNITION_RECORDS' : '📊 圖片辨識戰果榜' }}
+                </h2>
+                <span
+                  class="px-3 py-1 rounded-full text-xs font-mono font-bold"
+                  :class="
+                    isStealth
+                      ? 'bg-slate-200 text-slate-600'
+                      : 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-blue-400 border border-blue-500/30'
+                  "
+                >
+                  總計: {{ recognizedStocks.length }} 筆
+                </span>
+              </div>
+              <p class="text-sm opacity-60" :class="isStealth ? 'text-slate-500' : 'text-zinc-400'">
+                所有透過圖片辨識的股票資料
+              </p>
+            </div>
+
+            <!-- Search Bar -->
+            <div class="relative w-64">
+              <input
+                :value="searchQuery"
+                @input="setSearchQuery($event.target.value)"
+                placeholder="搜尋代號或名稱..."
+                class="w-full px-4 py-2 rounded-lg text-sm border outline-none transition-all"
                 :class="
                   isStealth
-                    ? 'bg-slate-200 text-slate-600'
-                    : 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-blue-400 border border-blue-500/30'
+                    ? 'bg-white border-slate-200 focus:border-blue-400'
+                    : 'bg-zinc-900 border-zinc-700 text-white focus:border-blue-500'
                 "
-              >
-                總計: {{ recognizedStocks.length }} 筆
-              </span>
+              />
+              <span v-if="searchQuery" @click="setSearchQuery('')" class="absolute right-3 top-2.5 text-xs cursor-pointer opacity-50 hover:opacity-100">✕</span>
             </div>
-            <p class="text-sm opacity-60" :class="isStealth ? 'text-slate-500' : 'text-zinc-400'">
-              所有透過圖片辨識的股票資料，包含傳入時的股價與目標價位
-            </p>
           </div>
 
           <!-- 空狀態 -->
@@ -653,8 +390,10 @@ onUnmounted(() => {
             :class="isStealth ? 'border-slate-200 text-slate-400' : 'border-zinc-800 text-zinc-600'"
           >
             <div class="text-6xl mb-4 opacity-20">📊</div>
-            <h3 class="text-lg font-bold mb-2">尚無辨識記錄</h3>
-            <p class="text-sm opacity-60">上傳股票圖片後，資料將顯示在此處</p>
+            <h3 class="text-lg font-bold mb-2">無符合資料</h3>
+            <p class="text-sm opacity-60">
+              {{ searchQuery ? '嘗試使用其他關鍵字搜尋' : '上傳股票圖片後，資料將顯示在此處' }}
+            </p>
           </div>
 
           <!-- 表格 -->
@@ -674,15 +413,78 @@ onUnmounted(() => {
                   "
                 >
                   <th class="px-4 py-4 text-left font-bold tracking-wide">#</th>
-                  <th class="px-4 py-4 text-left font-bold tracking-wide">股票代號</th>
-                  <th class="px-4 py-4 text-right font-bold tracking-wide">新增時股價</th>
-                  <th class="px-4 py-4 text-right font-bold tracking-wide">目前股價</th>
-                  <th class="px-4 py-4 text-right font-bold tracking-wide">換股價</th>
-                  <th class="px-4 py-4 text-right font-bold tracking-wide">支撐區間</th>
-                  <th class="px-4 py-4 text-right font-bold tracking-wide">短線目標</th>
-                  <th class="px-4 py-4 text-right font-bold tracking-wide">波段目標</th>
-                  <th class="px-4 py-4 text-center font-bold tracking-wide">狀態</th>
-                  <th class="px-4 py-4 text-left font-bold tracking-wide">傳入時間</th>
+                  
+                  <th 
+                    @click="toggleSort('code')" 
+                    class="px-4 py-4 text-left font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
+                  >
+                    股票代號
+                    <span v-if="sortConfig.key === 'code'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+                  </th>
+
+                  <th 
+                    @click="toggleSort('initialPrice')" 
+                    class="px-4 py-4 text-right font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
+                  >
+                    新增時股價
+                    <span v-if="sortConfig.key === 'initialPrice'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+                  </th>
+
+                  <th 
+                    @click="toggleSort('currentPrice')" 
+                    class="px-4 py-4 text-right font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
+                  >
+                    目前股價
+                    <span v-if="sortConfig.key === 'currentPrice'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+                  </th>
+
+                  <th 
+                    @click="toggleSort('swapRef')" 
+                    class="px-4 py-4 text-right font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
+                  >
+                    換股價
+                    <span v-if="sortConfig.key === 'swapRef'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+                  </th>
+
+                  <th 
+                    @click="toggleSort('support')" 
+                    class="px-4 py-4 text-right font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
+                  >
+                    支撐區間
+                    <span v-if="sortConfig.key === 'support'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+                  </th>
+
+                  <th 
+                    @click="toggleSort('shortTermProfit')" 
+                    class="px-4 py-4 text-right font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
+                  >
+                    短線目標
+                    <span v-if="sortConfig.key === 'shortTermProfit'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+                  </th>
+
+                  <th 
+                    @click="toggleSort('waveProfit')" 
+                    class="px-4 py-4 text-right font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
+                  >
+                    波段目標
+                    <span v-if="sortConfig.key === 'waveProfit'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+                  </th>
+
+                  <th 
+                    @click="toggleSort('isSuccess')" 
+                    class="px-4 py-4 text-center font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
+                  >
+                    狀態
+                    <span v-if="sortConfig.key === 'isSuccess'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+                  </th>
+
+                  <th 
+                    @click="toggleSort('updatedAt')" 
+                    class="px-4 py-4 text-left font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
+                  >
+                    傳入時間
+                    <span v-if="sortConfig.key === 'updatedAt'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -690,11 +492,13 @@ onUnmounted(() => {
                   v-for="(stock, index) in recognizedStocks"
                   :key="stock._id"
                   class="border-b transition-colors hover:bg-opacity-50"
-                  :class="
+                  :class="[
                     isStealth
                       ? 'border-slate-100 hover:bg-slate-50'
-                      : 'border-zinc-800/50 hover:bg-zinc-900/30'
-                  "
+                      : 'border-zinc-800/50 hover:bg-zinc-900/30',
+                    { 'limit-up-glory-animation': getLimitHitStatus(stock).isLimit && getLimitHitStatus(stock).isUp && !isStealth },
+                    { 'limit-down-table-animation': getLimitHitStatus(stock).isLimit && getLimitHitStatus(stock).isDown && !isStealth }
+                  ]"
                 >
                   <!-- 序號 -->
                   <td class="px-4 py-4 font-mono text-xs opacity-50">
@@ -721,14 +525,17 @@ onUnmounted(() => {
 
                   <!-- 新增時股價 (資料庫記錄) -->
                   <td class="px-4 py-4 text-right">
-                    <span
-                      v-if="stock.currentPrice"
-                      class="font-mono text-sm"
-                      :class="isStealth ? 'text-slate-600' : 'text-zinc-400'"
-                    >
-                      {{ formatStockPrice(stock.currentPrice) }}
-                    </span>
-                    <span v-else class="text-xs opacity-40">-</span>
+                    <div class="flex items-center justify-end gap-1">
+                      <span
+                        v-if="stock.currentPrice"
+                        class="font-mono text-sm"
+                        :class="isStealth ? 'text-slate-600' : 'text-zinc-400'"
+                      >
+                        {{ formatStockPrice(stock.currentPrice) }}
+                      </span>
+                      <span v-else class="text-xs opacity-40">-</span>
+                      <button @click="editInitialPrice(stock)" class="opacity-20 hover:opacity-100 text-xs">✎</button>
+                    </div>
                   </td>
 
                   <!-- 目前股價 (即時 API) -->
@@ -998,5 +805,13 @@ onUnmounted(() => {
         </div>
       </main>
     </div>
+    <PriceEditModal 
+      :show="isPriceModalVisible" 
+      :stock="editingStock"
+      :is-stealth="isStealth"
+      @close="handleCloseModal" 
+      @save="handleSavePrice" 
+    />
+    <ConfirmModal :is-stealth="isStealth" />
   </div>
 </template>

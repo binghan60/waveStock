@@ -99,7 +99,6 @@ async function fetchStockDataWithRetry(stockIds, retryCount = 0) {
       timeout: 10000,
     })
     const msgArray = response.data.msgArray
-
     if (!msgArray || msgArray.length === 0) {
       console.log('⚠️ API 回傳空資料')
       return []
@@ -112,7 +111,12 @@ async function fetchStockDataWithRetry(stockIds, retryCount = 0) {
         let currentPrice = msg.z
 
         if (currentPrice === '-') {
-          if (msg.b && msg.b !== '-') {
+          // 優先判斷是否為漲跌停板
+          if (msg.u && msg.h === msg.u) {
+            currentPrice = msg.u // 漲停
+          } else if (msg.w && msg.l === msg.w) {
+            currentPrice = msg.w // 跌停
+          } else if (msg.b && msg.b !== '-') {
             currentPrice = msg.b.split('_')[0]
           } else if (msg.a && msg.a !== '-') {
             currentPrice = msg.a.split('_')[0]
@@ -129,6 +133,8 @@ async function fetchStockDataWithRetry(stockIds, retryCount = 0) {
           volume: msg.v,
           time: msg.t,
           fullKey: msg.ch,
+          limitUp: msg.u,
+          limitDown: msg.w,
         }
       })
 
@@ -270,9 +276,7 @@ router.get('/dashboard', async (req, res) => {
       let updatedAt = stockObject.updatedAt // 預設為文件更新時間
 
       // 篩選出決定狀態的事件 (成功或失敗)，並按時間排序
-      const statusEvents = history
-        .filter((h) => h.type === 'shortTerm' || h.type === 'swap')
-        .sort((a, b) => new Date(b.happenedAt) - new Date(a.happenedAt))
+      const statusEvents = history.filter((h) => h.type === 'shortTerm' || h.type === 'swap').sort((a, b) => new Date(b.happenedAt) - new Date(a.happenedAt))
 
       if (statusEvents.length > 0) {
         const latestEvent = statusEvents[0]
@@ -422,7 +426,7 @@ router.patch('/recognized-stocks/:id', async (req, res) => {
     const updates = req.body
 
     // 允許更新的欄位
-    const allowedFields = ['support', 'shortTermProfit', 'waveProfit', 'swapRef', 'source', 'isFavorite']
+    const allowedFields = ['support', 'shortTermProfit', 'waveProfit', 'swapRef', 'source', 'isFavorite', 'currentPrice']
     const updateData = {}
 
     allowedFields.forEach((field) => {
@@ -535,7 +539,6 @@ router.post('/check-stock-status', async (req, res) => {
       const chunk = chunks[i]
       const queryStr = chunk.map((s) => `tse_${s.code}.tw|otc_${s.code}.tw`).join('|')
       const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${queryStr}`
-
       try {
         const response = await axios.get(`${url}&_=${Date.now()}`, {
           headers: { 'User-Agent': 'Mozilla/5.0' },

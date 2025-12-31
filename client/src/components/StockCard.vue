@@ -1,68 +1,16 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, toRef } from 'vue'
+import { useStockFormatter } from '@/composables/useStockFormatter'
+import { useStockDetails } from '@/composables/useStockDetails'
+
+const { formatPrice, formatNumber } = useStockFormatter()
 
 const props = defineProps(['item', 'isStealth', 'badge'])
 const emit = defineEmits(['remove', 'togglePin'])
 
-// 根據股價區間動態調整顯示位數
-const formatPrice = (val) => {
-  if (!val || val === '-') return '-'
-  
-  const num = parseFloat(val)
-  if (isNaN(num)) return '-'
+// 使用 Composable 計算股票詳情 (價差、漲跌幅、顏色)
+const { details } = useStockDetails(toRef(props, 'item'), toRef(props, 'isStealth'))
 
-  if (num < 10) {
-    return num.toFixed(2) // < 10: 顯示 2 位小數
-  } else if (num < 50) {
-    return num.toFixed(2) // 10-50: 顯示 2 位小數
-  } else if (num < 100) {
-    return num.toFixed(1) // 50-100: 顯示 1 位小數
-  } else if (num < 500) {
-    return num.toFixed(1) // 100-500: 顯示 1 位小數
-  } else if (num < 1000) {
-    return num.toFixed(0) // 500-1000: 顯示整數
-  } else {
-    return num.toFixed(0) // > 1000: 顯示整數
-  }
-}
-const formatNumber = (val) => (val ? parseInt(val).toLocaleString() : '-')
-
-const details = computed(() => {
-  const stock = props.item
-  if (!stock.market)
-    return { diff: 0, percent: '0.00', isUp: false, isDown: false, colorClass: 'text-gray-500' }
-
-  const c = parseFloat(stock.market.currentPrice)
-  const y = parseFloat(stock.market.yesterdayClose)
-  const diff = c - y
-  const percent = ((diff / y) * 100).toFixed(2)
-  const isUp = diff > 0
-  const isDown = diff < 0
-
-  let colorClass = 'text-gray-500'
-
-  if (!props.isStealth) {
-    // 正常模式：紅漲綠跌
-    colorClass = isUp ? 'text-red-400' : isDown ? 'text-green-400' : 'text-white'
-  } else {
-    // ★ 修改處：辦公室模式使用「深淺對比」
-    if (isUp) {
-      colorClass = 'text-slate-900 font-bold' // 漲：深黑 + 粗體
-    } else if (isDown) {
-      colorClass = 'text-slate-500 font-medium' // 跌：中灰 + 一般
-    } else {
-      colorClass = 'text-slate-400'
-    }
-  }
-
-  return {
-    diff: Math.abs(diff).toFixed(1),
-    percent: Math.abs(percent),
-    isUp,
-    isDown,
-    colorClass,
-  }
-})
 </script>
 
 <template>

@@ -1,34 +1,17 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, toRef } from 'vue'
+import { useStockFormatter } from '@/composables/useStockFormatter'
+import { useStockDetails } from '@/composables/useStockDetails'
+
+const { formatPrice, formatNumber } = useStockFormatter()
 
 const props = defineProps(['item', 'isStealth'])
-const emit = defineEmits(['remove', 'togglePin'])
+const emit = defineEmits(['togglePin']) // 已移除 remove
+
+// 使用 Composable 計算股票詳情
+const { details: marketDetails } = useStockDetails(toRef(props, 'item'), toRef(props, 'isStealth'))
 
 // --- 工具函式 ---
-// 根據股價區間動態調整顯示位數
-const formatPrice = (val) => {
-  if (!val || val === '-') return '-'
-  
-  const num = parseFloat(val)
-  if (isNaN(num)) return '-'
-
-  if (num < 10) {
-    return num.toFixed(2) // < 10: 顯示 2 位小數
-  } else if (num < 50) {
-    return num.toFixed(2) // 10-50: 顯示 2 位小數
-  } else if (num < 100) {
-    return num.toFixed(1) // 50-100: 顯示 1 位小數
-  } else if (num < 500) {
-    return num.toFixed(1) // 100-500: 顯示 1 位小數
-  } else if (num < 1000) {
-    return num.toFixed(0) // 500-1000: 顯示整數
-  } else {
-    return num.toFixed(0) // > 1000: 顯示整數
-  }
-}
-
-const formatNumber = (val) => (val ? parseInt(val).toLocaleString() : '-')
-
 const formatAnalysisPrice = (val) => {
   return val || '無資料'
 }
@@ -72,45 +55,8 @@ const sourceBadgeClass = computed(() => {
     : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
 })
 
-
-const marketDetails = computed(() => {
-  const stock = props.item
-  if (!stock.market || stock.market.yesterdayClose == null) {
-    return { diff: '0.0', percent: '0.00', isUp: false, isDown: false, colorClass: 'text-gray-500' }
-  }
-
-  const c = parseFloat(stock.market.currentPrice)
-  const y = parseFloat(stock.market.yesterdayClose)
-  const diff = c - y
-  const percent = ((diff / y) * 100).toFixed(2)
-  const isUp = diff > 0
-  const isDown = diff < 0
-
-  let colorClass = 'text-gray-500'
-
-  if (!props.isStealth) {
-    // 正常模式：紅漲綠跌
-    colorClass = isUp ? 'text-red-400' : isDown ? 'text-green-400' : 'text-white'
-  } else {
-    // ★ 修改處：辦公室模式利用「深淺」與「粗細」區分
-    // 漲：深黑 + 粗體 (看起來像重點數據)
-    // 跌：中灰 + 正常 (看起來像次要數據)
-    if (isUp) {
-      colorClass = 'text-slate-900 font-bold'
-    } else if (isDown) {
-      colorClass = 'text-slate-500 font-medium'
-    } else {
-      colorClass = 'text-slate-400'
-    }
-  }
-
-  return {
-    diff: Math.abs(diff).toFixed(1),
-    percent: Math.abs(parseFloat(percent)).toFixed(2),
-    isUp,
-    isDown,
-    colorClass,
-  }
+const isLimitHit = computed(() => {
+  return marketDetails.value.rawAbsPercent >= 9.5
 })
 
 const daysLeft = computed(() => {
@@ -168,10 +114,9 @@ const priceChart = computed(() => {
   if (!props.item.market) return null
 
   const currentPrice = parseFloat(props.item.market.currentPrice)
-  const yesterdayClose = parseFloat(props.item.market.yesterdayClose) // 取得昨收來判斷現價顏色
+  const yesterdayClose = parseFloat(props.item.market.yesterdayClose) 
   if (isNaN(currentPrice)) return null
 
-  // 判斷現價相對昨收是漲是跌
   const isUp = !isNaN(yesterdayClose) && currentPrice > yesterdayClose
   const isDown = !isNaN(yesterdayClose) && currentPrice < yesterdayClose
 
@@ -227,7 +172,6 @@ const priceChart = computed(() => {
       value: currentPrice,
       color: 'current',
       isCurrent: true,
-      // 傳遞漲跌狀態給模板
       isUp,
       isDown,
     },
@@ -261,11 +205,13 @@ const priceChart = computed(() => {
 <template>
   <div
     class="group relative rounded-xl p-5 border transition-all duration-300"
-    :class="
+    :class="[
       isStealth
         ? 'bg-white border-gray-200 shadow-sm'
-        : 'bg-zinc-900 border-zinc-800 hover:border-zinc-600 hover:bg-zinc-800/80 hover:-translate-y-1 hover:shadow-xl'
-    "
+        : 'bg-zinc-900 border-zinc-800 hover:border-zinc-600 hover:bg-zinc-800/80 hover:-translate-y-1 hover:shadow-xl',
+      { 'limit-up-animation': isLimitHit && marketDetails.isUp && !isStealth },
+      { 'limit-down-animation': isLimitHit && marketDetails.isDown && !isStealth }
+    ]"
   >
     <div
       class="absolute -top-2 -right-2 px-2 py-0.5 text-white text-[10px] font-bold rounded shadow-lg z-10"
@@ -298,12 +244,7 @@ const priceChart = computed(() => {
           {{ isStealth ? 'Node' : item.market.name }}
         </span>
       </div>
-      <button
-        @click="$emit('remove', item._id)"
-        class="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:text-red-400"
-      >
-        ✕
-      </button>
+      <!-- 刪除按鈕已移除 -->
     </div>
 
     <div
@@ -320,17 +261,7 @@ const priceChart = computed(() => {
         </div>
         <div class="flex flex-col text-xs font-medium mb-1" :class="marketDetails.colorClass">
           <span class="flex items-center">
-            {{
-              marketDetails.isUp
-                ? isStealth
-                  ? '▲' // 恢復箭頭，因為顏色變低調了
-                  : '▲'
-                : marketDetails.isDown
-                  ? isStealth
-                    ? '▼'
-                    : '▼'
-                  : ''
-            }}
+            {{ marketDetails.isUp ? '▲' : marketDetails.isDown ? '▼' : '' }}
             {{ marketDetails.diff }}
           </span>
           <span class="opacity-80">{{ marketDetails.percent }}%</span>
@@ -398,13 +329,10 @@ const priceChart = computed(() => {
                 'bg-purple-500': point.color === 'purple' && !isStealth,
                 'bg-orange-500': point.color === 'orange' && !isStealth,
                 'bg-red-500': point.isCurrent && !isStealth,
-
-                // ★ 隱藏模式：現價線條依照漲(深)跌(淺)區分
                 'bg-slate-800': point.isCurrent && point.isUp && isStealth,
                 'bg-slate-400': point.isCurrent && !point.isUp && isStealth,
-                'bg-slate-300': !point.isCurrent && isStealth, // 其他參考線
-
-                'bg-gray-700': point.isCurrent && isStealth && !point.isUp && !point.isDown, // 平盤
+                'bg-slate-300': !point.isCurrent && isStealth,
+                'bg-gray-700': point.isCurrent && isStealth && !point.isUp && !point.isDown,
               }"
             ></div>
 
@@ -416,12 +344,8 @@ const priceChart = computed(() => {
                 'bg-purple-500 border-purple-400': point.color === 'purple' && !isStealth,
                 'bg-orange-500 border-orange-400': point.color === 'orange' && !isStealth,
                 'bg-red-500 border-red-400 scale-125': point.isCurrent && !isStealth,
-
-                // ★ 隱藏模式：現價圓點依照漲(深)跌(淺)區分
-                'bg-slate-800 border-slate-900 scale-125':
-                  point.isCurrent && point.isUp && isStealth,
-                'bg-slate-300 border-slate-400 scale-110':
-                  point.isCurrent && point.isDown && isStealth,
+                'bg-slate-800 border-slate-900 scale-125': point.isCurrent && point.isUp && isStealth,
+                'bg-slate-300 border-slate-400 scale-110': point.isCurrent && point.isDown && isStealth,
                 'bg-slate-200 border-slate-300': !point.isCurrent && isStealth,
               }"
             ></div>
@@ -430,7 +354,6 @@ const priceChart = computed(() => {
               :class="[
                 isStealth ? 'text-slate-600' : 'text-white',
                 point.isCurrent ? 'scale-110' : 'opacity-70',
-                // ★ 隱藏模式：字體也加強對比
                 isStealth && point.isCurrent && point.isUp ? 'font-black text-slate-900' : '',
               ]"
             >
@@ -447,47 +370,20 @@ const priceChart = computed(() => {
     <div class="grid grid-cols-2 gap-3 mt-4">
       <div
         v-for="conf in [
-          {
-            label: '換股',
-            key: 'swapRef',
-            color: 'text-orange-400',
-            indicatorColor: 'orange',
-            bgColor: 'bg-orange-500/20',
-          },
-          {
-            label: '支撐',
-            key: 'support',
-            color: 'text-blue-400',
-            indicatorColor: 'blue',
-            bgColor: 'bg-blue-500/20',
-          },
-          {
-            label: '短線',
-            key: 'shortTermProfit',
-            color: 'text-green-400',
-            indicatorColor: 'green',
-            bgColor: 'bg-green-500/20',
-          },
-          {
-            label: '波段',
-            key: 'waveProfit',
-            color: 'text-purple-400',
-            indicatorColor: 'purple',
-            bgColor: 'bg-purple-500/20',
-          },
+          { label: '換股', key: 'swapRef', color: 'text-orange-400', indicatorColor: 'orange', bgColor: 'bg-orange-500/20' },
+          { label: '支撐', key: 'support', color: 'text-blue-400', indicatorColor: 'blue', bgColor: 'bg-blue-500/20' },
+          { label: '短線', key: 'shortTermProfit', color: 'text-green-400', indicatorColor: 'green', bgColor: 'bg-green-500/20' },
+          { label: '波段', key: 'waveProfit', color: 'text-purple-400', indicatorColor: 'purple', bgColor: 'bg-purple-500/20' },
         ]"
         :key="conf.key"
         class="relative flex flex-col p-3 rounded-xl border transition-all duration-500"
         :class="[
           isStealth ? 'bg-gray-50 border-gray-100' : 'bg-white/5 border-transparent',
-
           priceInRange.matchedIndicators.includes(conf.label)
             ? [
-                !isStealth
-                  ? `indicator-active-hit-${conf.indicatorColor}`
-                  : 'border-slate-400 shadow-md', // 隱藏模式命中時加深邊框
+                !isStealth ? `indicator-active-hit-${conf.indicatorColor}` : 'border-slate-400 shadow-md',
                 'border-2',
-                isStealth ? 'bg-gray-200 text-slate-900 font-bold' : conf.color, // 隱藏模式命中時字體變黑變粗
+                isStealth ? 'bg-gray-200 text-slate-900 font-bold' : conf.color,
               ]
             : '',
         ]"
@@ -496,7 +392,6 @@ const priceChart = computed(() => {
           <span class="text-[10px] uppercase font-bold tracking-wider opacity-50">
             {{ conf.label }}
           </span>
-
           <span
             v-if="priceChart"
             class="text-[10px] font-mono font-bold"
@@ -514,7 +409,6 @@ const priceChart = computed(() => {
             <template v-else>-</template>
           </span>
         </div>
-
         <div
           class="text-sm font-mono font-black"
           :class="isStealth ? 'text-slate-700' : conf.color"
@@ -562,10 +456,42 @@ const priceChart = computed(() => {
 </template>
 
 <style scoped>
-/* 保持原有的動畫 CSS */
+@keyframes limit-glow-red {
+  0%, 100% {
+    background-color: rgba(239, 68, 68, 0.05);
+    border-color: rgba(239, 68, 68, 0.7);
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    background-color: rgba(239, 68, 68, 0.15);
+    border-color: rgba(255, 100, 100, 1);
+    box-shadow: 0 0 25px rgba(255, 100, 100, 0.6);
+  }
+}
+
+@keyframes limit-glow-green {
+  0%, 100% {
+    background-color: rgba(34, 197, 94, 0.05);
+    border-color: rgba(34, 197, 94, 0.7);
+    box-shadow: 0 0 15px rgba(34, 197, 94, 0.4);
+  }
+  50% {
+    background-color: rgba(34, 197, 94, 0.15);
+    border-color: rgba(74, 222, 128, 1);
+    box-shadow: 0 0 25px rgba(74, 222, 128, 0.6);
+  }
+}
+
+.limit-up-animation {
+  animation: limit-glow-red 2s ease-in-out infinite;
+}
+
+.limit-down-animation {
+  animation: limit-glow-green 2s ease-in-out infinite;
+}
+
 @keyframes indicator-glow-orange {
-  0%,
-  100% {
+  0%, 100% {
     background-color: rgba(249, 115, 22, 0.2);
     border-color: rgba(249, 115, 22, 0.6);
     box-shadow: 0 0 20px rgba(249, 115, 22, 0.3);
@@ -578,8 +504,7 @@ const priceChart = computed(() => {
 }
 
 @keyframes indicator-glow-blue {
-  0%,
-  100% {
+  0%, 100% {
     background-color: rgba(59, 130, 246, 0.2);
     border-color: rgba(59, 130, 246, 0.6);
     box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
@@ -592,8 +517,7 @@ const priceChart = computed(() => {
 }
 
 @keyframes indicator-glow-green {
-  0%,
-  100% {
+  0%, 100% {
     background-color: rgba(34, 197, 94, 0.2);
     border-color: rgba(34, 197, 94, 0.6);
     box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
@@ -606,8 +530,7 @@ const priceChart = computed(() => {
 }
 
 @keyframes indicator-glow-purple {
-  0%,
-  100% {
+  0%, 100% {
     background-color: rgba(168, 85, 247, 0.2);
     border-color: rgba(168, 85, 247, 0.6);
     box-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
