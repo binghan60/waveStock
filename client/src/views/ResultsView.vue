@@ -62,7 +62,7 @@ const handleSavePrice = async (newPrice) => {
             :class="
               isStealth
                 ? 'bg-slate-200 text-slate-600'
-                : 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-blue-400 border border-blue-500/30'
+                : 'bg-linear-to-r from-blue-500/20 to-purple-500/20 text-blue-400 border border-blue-500/30'
             "
           >
             總計: {{ recognizedStocks.length }} 筆
@@ -372,7 +372,7 @@ const handleSavePrice = async (newPrice) => {
             <td class="px-4 py-3 text-center align-middle">
               <div class="flex flex-col items-center justify-center gap-1">
                 <span
-                  class="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm min-w-[60px]"
+                  class="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm min-w-15"
                   :class="[
                     getStatusBg(stock.isSuccess, isStealth),
                     getStatusColor(stock.isSuccess, isStealth),

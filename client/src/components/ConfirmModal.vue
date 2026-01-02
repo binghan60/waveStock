@@ -8,7 +8,7 @@ defineProps(['isStealth'])
 <template>
   <div
     v-if="isVisible"
-    class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] transition-opacity"
+    class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-100 transition-opacity"
     @click.self="handleCancel"
   >
     <div

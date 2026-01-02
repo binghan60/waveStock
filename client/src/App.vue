@@ -6,7 +6,6 @@ import { useStockStore } from '@/stores/stockStore'
 
 const stockStore = useStockStore()
 const { 
-  isLoading, 
   lastUpdated, 
   isStealth,
 } = storeToRefs(stockStore)

@@ -2,7 +2,7 @@
 import StockCard from './StockCard.vue'
 import StockCardSkeleton from './StockCardSkeleton.vue'
 
-const props = defineProps({
+defineProps({
   title: String,
   stealthTitle: String,
   count: Number,

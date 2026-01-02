@@ -16,7 +16,6 @@ const props = defineProps({
     default: true
   }
 })
-const emit = defineEmits(['remove', 'togglePin'])
 
 // 使用 Composable 計算股票詳情 (價差、漲跌幅、顏色)
 const { details } = useStockDetails(toRef(props, 'item'), toRef(props, 'isStealth'))
@@ -325,7 +324,7 @@ const getHitTypeClass = (type, isStealth) => {
       <div v-if="priceChart" class="mb-4">
         <div class="text-xs opacity-60 mb-4 uppercase">價格區間分析</div>
         <div
-          class="relative h-16 bg-gradient-to-r from-transparent via-white/5 to-transparent rounded-lg my-12"
+          class="relative h-16 bg-linear-to-r from-transparent via-white/5 to-transparent rounded-lg my-12"
         >
           <div class="absolute inset-0 flex justify-between px-2">
             <div

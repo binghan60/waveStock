@@ -277,7 +277,7 @@ export const useStockStore = defineStore('stock', () => {
       await fetchData()
       toast.success('價格更新成功')
       return true
-    } catch (error) {
+    } catch (e) {
       toast.error('更新價格失敗')
       return false
     }
@@ -355,9 +355,10 @@ export const useStockStore = defineStore('stock', () => {
           )
         case 'swapRef':
           return parseFloat(s.swapRef || 0)
-        case 'support':
+        case 'support': {
           const sup = s.support ? s.support.toString() : '0'
           return parseFloat(sup.split('-')[0] || 0)
+        }
         case 'shortTermProfit':
           return parseFloat(s.shortTermProfit || 0)
         case 'waveProfit':
