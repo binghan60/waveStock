@@ -2,9 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'vue-toastification'
-import StockCard from './components/StockCard.vue'
-import RecognizedStockCard from './components/RecognizedStockCard.vue'
-import StockCardSkeleton from './components/StockCardSkeleton.vue'
+import StockSection from './components/StockSection.vue'
 import PriceEditModal from './components/PriceEditModal.vue'
 import ConfirmModal from './components/ConfirmModal.vue'
 import { useStockFormatter } from '@/composables/useStockFormatter'
@@ -77,8 +75,15 @@ const handleAddStock = async () => {
   inputSymbol.value = ''
 }
 
-// --- Lifecycle ---
+const handleRemoveItem = (item) => {
+  if (item.listType === 'manual') {
+    removeStock(item.id || item._id)
+  } else {
+    removeRecognizedStock(item._id)
+  }
+}
 
+// --- Lifecycle ---
 onMounted(() => {
   startAutoRefresh()
 })
@@ -138,12 +143,12 @@ onUnmounted(() => {
         </div>
       </header>
 
-      <!-- Tab Navigation -->
-      <div class="mb-8">
-        <div class="flex border-b" :class="isStealth ? 'border-slate-200' : 'border-zinc-800'">
+      <!-- Tab Navigation & Quick Add -->
+      <div class="mb-8 flex flex-col md:flex-row justify-between items-center border-b gap-4" :class="isStealth ? 'border-slate-200' : 'border-zinc-800'">
+        <div class="flex">
           <button
             @click="setActiveTab('dashboard')"
-            class="px-6 py-3 text-sm font-bold tracking-wider uppercase transition-all"
+            class="px-6 py-3 text-sm font-bold tracking-wider uppercase transition-all whitespace-nowrap"
             :class="[
               activeTab === 'dashboard'
                 ? isStealth
@@ -158,7 +163,7 @@ onUnmounted(() => {
           </button>
           <button
             @click="setActiveTab('dataTable')"
-            class="px-6 py-3 text-sm font-bold tracking-wider uppercase transition-all"
+            class="px-6 py-3 text-sm font-bold tracking-wider uppercase transition-all whitespace-nowrap"
             :class="[
               activeTab === 'dataTable'
                 ? isStealth
@@ -172,6 +177,35 @@ onUnmounted(() => {
             戰果榜
           </button>
         </div>
+
+        <!-- Quick Add Section (Only in Dashboard) -->
+        <div v-if="activeTab === 'dashboard'" class="flex gap-2 pb-2 md:pb-0 md:mb-[-1px]">
+          <div class="relative w-48 md:w-64">
+            <input
+              v-model="inputSymbol"
+              @keyup.enter="handleAddStock"
+              :placeholder="isStealth ? 'Symbol...' : '快速加入代號'"
+              class="w-full px-3 py-1.5 text-sm rounded-lg border outline-none transition-all"
+              :class="
+                isStealth
+                  ? 'bg-white border-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
+                  : 'bg-zinc-900 border-zinc-800 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20'
+              "
+            />
+          </div>
+          <button
+            @click="handleAddStock"
+            :disabled="isLoading"
+            class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50"
+            :class="
+              isStealth
+                ? 'bg-slate-700 text-white hover:bg-slate-800'
+                : 'bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20'
+            "
+          >
+            {{ isLoading ? '...' : 'ADD' }}
+          </button>
+        </div>
       </div>
 
       <!-- Tab Content -->
@@ -179,167 +213,56 @@ onUnmounted(() => {
         <!-- Dashboard / 戰情室 -->
         <div v-if="activeTab === 'dashboard'">
           <!-- 置頂區域 -->
-          <section v-if="pinnedStocks.length > 0 || isLoading" class="mb-14">
-            <div class="flex items-center gap-3 mb-6 pl-1">
-              <h2 class="text-xl font-bold tracking-tight">
-                {{ isStealth ? 'PINNED_WATCHLIST' : '📌 置頂監控' }}
-              </h2>
-              <span
-                class="px-2 py-0.5 rounded text-[10px] font-mono font-bold"
-                :class="
-                  isStealth
-                    ? 'bg-yellow-100 text-yellow-700'
-                    : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
-                "
+          <StockSection
+            title="📌 置頂監控"
+            stealthTitle="PINNED_WATCHLIST"
+            :stocks="pinnedStocks"
+            :count="pinnedStocks.length"
+            :is-loading="isLoading"
+            :is-stealth="isStealth"
+            :show-if-empty="false"
+            badge-class="bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"
+            @remove="handleRemoveItem"
+            @togglePin="togglePin"
+          />
+
+          <!-- 圖片辨識區域 -->
+          <StockSection
+            title="圖片辨識分析"
+            stealthTitle="AI_ANALYTICS_DATA"
+            :stocks="unpinnedRecognizedStocks"
+            :count="unpinnedRecognizedStocks.length"
+            :is-loading="isLoading"
+            :is-stealth="isStealth"
+            :allow-delete="false"
+            badge-class="bg-green-500/10 text-green-400 border border-green-500/20"
+            @remove="handleRemoveItem"
+            @togglePin="togglePin"
+          >
+            <template #actions v-if="!isStealth">
+              <button
+                @click="triggerBot"
+                class="px-2 py-1 rounded text-[10px] border border-zinc-700 text-zinc-500 hover:border-blue-500 hover:text-blue-400 transition-all uppercase tracking-tighter"
               >
-                PINNED: {{ pinnedStocks.length }}
-              </span>
-            </div>
+                Run Bot Test
+              </button>
+            </template>
+          </StockSection>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              <!-- Skeletons -->
-              <template v-if="isLoading && pinnedStocks.length === 0">
-                <StockCardSkeleton v-for="i in 3" :key="i" :is-stealth="isStealth" />
-              </template>
 
-              <template v-else v-for="item in pinnedStocks" :key="item._id || item.id">
-                <!-- 手動新增的股票 -->
-                <StockCard
-                  v-if="item.listType === 'manual'"
-                  :item="item"
-                  :is-stealth="isStealth"
-                  @remove="removeStock"
-                  @togglePin="togglePin"
-                />
-                <!-- 辨識的股票 -->
-                <RecognizedStockCard
-                  v-else-if="item.listType === 'recognized'"
-                  :item="item"
-                  :is-stealth="isStealth"
-                  @remove="removeRecognizedStock"
-                  @togglePin="togglePin"
-                />
-              </template>
-            </div>
-          </section>
-
-          <section class="mb-14">
-            <div class="flex items-center justify-between mb-6 pl-1">
-              <div class="flex items-center gap-3">
-                <h2 class="text-xl font-bold tracking-tight">
-                  {{ isStealth ? 'AI_ANALYTICS_DATA' : '圖片辨識分析' }}
-                </h2>
-                <span
-                  class="px-2 py-0.5 rounded text-[10px] font-mono font-bold"
-                  :class="
-                    isStealth
-                      ? 'bg-slate-200 text-slate-500'
-                      : 'bg-green-500/10 text-green-400 border border-green-500/20'
-                  "
-                >
-                  COUNT: {{ unpinnedRecognizedStocks.length }}
-                </span>
-              </div>
-            </div>
-
-            <!-- Skeletons for Recognized -->
-            <div v-if="isLoading && unpinnedRecognizedStocks.length === 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-               <StockCardSkeleton v-for="i in 3" :key="`skel-rec-${i}`" :is-stealth="isStealth" />
-            </div>
-
-            <div
-              v-else-if="unpinnedRecognizedStocks.length === 0"
-              class="py-12 text-center border-2 border-dashed rounded-2xl transition-colors"
-              :class="
-                isStealth ? 'border-slate-200 text-slate-400' : 'border-zinc-800 text-zinc-600'
-              "
-            >
-              <p class="text-sm font-medium">No records found.</p>
-            </div>
-
-            <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              <RecognizedStockCard
-                v-for="item in unpinnedRecognizedStocks"
-                :key="item._id"
-                :item="item"
-                :is-stealth="isStealth"
-                @remove="removeRecognizedStock"
-                @togglePin="togglePin"
-              />
-            </div>
-          </section>
-
-          <div class="flex gap-3 mb-14 max-w-lg">
-            <div class="relative flex-1">
-              <input
-                v-model="inputSymbol"
-                @keyup.enter="handleAddStock"
-                :placeholder="isStealth ? 'Query identifier...' : '輸入代號加入監控 (如 2330)'"
-                class="w-full px-5 py-3 rounded-xl border outline-none transition-all"
-                :class="
-                  isStealth
-                    ? 'bg-white border-slate-200 focus:border-slate-400 focus:ring-4 focus:ring-slate-100 text-slate-600'
-                    : 'bg-zinc-900 border-zinc-800 text-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10'
-                "
-              />
-            </div>
-            <button
-              @click="handleAddStock"
-              :disabled="isLoading"
-              class="px-8 py-3 rounded-xl font-black transition-all active:scale-95 disabled:opacity-50"
-              :class="
-                isStealth
-                  ? 'bg-slate-700 text-white hover:bg-slate-800'
-                  : 'bg-blue-600 text-white hover:bg-blue-500 hover:shadow-[0_0_20px_rgba(37,99,235,0.4)]'
-              "
-            >
-              {{ isLoading ? '...' : 'ADD' }}
-            </button>
-          </div>
-
-          <section>
-            <div>
-              <div class="flex items-center gap-3 mb-6 pl-1">
-                <h2 class="text-xl font-bold tracking-tight">
-                  {{ isStealth ? 'USER_WATCHLIST_LOCAL' : '個人自選清單' }}
-                </h2>
-                <span
-                  class="px-2 py-0.5 rounded text-[10px] font-mono font-bold"
-                  :class="
-                    isStealth
-                      ? 'bg-slate-200 text-slate-500'
-                      : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-                  "
-                >
-                  ITEMS: {{ unpinnedStocks.length }}
-                </span>
-              </div>
-
-              <!-- Skeletons for Manual -->
-              <div v-if="isLoading && unpinnedStocks.length === 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                 <StockCardSkeleton v-for="i in 4" :key="`skel-man-${i}`" :is-stealth="isStealth" />
-              </div>
-
-              <div
-                v-else-if="unpinnedStocks.length === 0 && pinnedStocks.length === 0"
-                class="py-12 text-center border-2 border-dashed rounded-2xl"
-                :class="isStealth ? 'border-slate-200' : 'border-zinc-800'"
-              >
-                <p class="text-sm opacity-40">Watchlist is empty.</p>
-              </div>
-
-              <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                <StockCard
-                  v-for="item in unpinnedStocks"
-                  :key="item._id || item.id"
-                  :item="item"
-                  :is-stealth="isStealth"
-                  @remove="removeStock"
-                  @togglePin="togglePin"
-                />
-              </div>
-            </div>
-          </section>
+          <!-- 個人自選區域 -->
+          <StockSection
+            title="個人自選清單"
+            stealthTitle="USER_WATCHLIST_LOCAL"
+            :stocks="unpinnedStocks"
+            :count="unpinnedStocks.length"
+            :is-loading="isLoading"
+            :is-stealth="isStealth"
+            grid-cols="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            empty-message="Watchlist is empty."
+            @remove="handleRemoveItem"
+            @togglePin="togglePin"
+          />
         </div>
 
         <!-- Data Table / 戰果榜 -->
