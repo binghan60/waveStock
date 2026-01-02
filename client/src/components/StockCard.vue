@@ -129,9 +129,9 @@ const priceChart = computed(() => {
   }
 
   const otherKeys = [
-    { key: 'shortTermProfit', label: '短線', color: 'orange' },
-    { key: 'waveProfit', label: '波段', color: 'red' },
-    { key: 'swapRef', label: '換股', color: 'green' },
+    { key: 'shortTermProfit', label: '短線', color: 'amber' },
+    { key: 'waveProfit', label: '波段', color: 'rose' },
+    { key: 'swapRef', label: '換股', color: 'emerald' },
   ]
 
   otherKeys.forEach((item) => {
@@ -215,14 +215,22 @@ const getHitTypeClass = (type, isStealth) => {
     ? `bg-${config.indicatorClass}-100 text-${config.indicatorClass}-700`
     : `${config.bgClass} ${config.textClass}`
 }
+
+const isToday = (dateStr) => {
+  const d = new Date(dateStr)
+  const today = new Date()
+  return d.getDate() === today.getDate() &&
+         d.getMonth() === today.getMonth() &&
+         d.getFullYear() === today.getFullYear()
+}
 </script>
 
 <template>
   <div
-    class="group relative rounded-xl p-5 border transition-all duration-300"
+    class="group relative rounded-xl p-4 border transition-all duration-300"
     :class="[
       isStealth
-        ? 'bg-white border-gray-200 shadow-sm'
+        ? 'bg-white border-gray-200 shadow-sm is-stealth'
         : 'bg-zinc-900 border-zinc-800 hover:border-zinc-600 hover:bg-zinc-800/80 hover:-translate-y-1 hover:shadow-xl',
       { 'limit-up-animation': isLimitHit && details.isUp && !isStealth },
       { 'limit-down-animation': isLimitHit && details.isDown && !isStealth },
@@ -237,7 +245,7 @@ const getHitTypeClass = (type, isStealth) => {
     </div>
 
     <!-- Header -->
-    <div class="flex justify-between items-start mb-3">
+    <div class="flex justify-between items-start mb-2">
       <div class="flex items-center gap-2">
         <span
           class="text-2xl font-bold tracking-tight"
@@ -279,7 +287,7 @@ const getHitTypeClass = (type, isStealth) => {
     </div>
 
     <!-- Market Data -->
-    <div v-if="item.market" class="space-y-3 mb-4 pb-4 border-b" :class="isStealth ? 'border-gray-200' : 'border-zinc-700'">
+    <div v-if="item.market" class="space-y-2 mb-3 pb-3 border-b" :class="isStealth ? 'border-gray-200' : 'border-zinc-700'">
       <div class="flex items-end gap-3">
         <div
           class="text-4xl leading-none tabular-nums tracking-tight transition-all duration-500"
@@ -315,26 +323,18 @@ const getHitTypeClass = (type, isStealth) => {
         </div>
       </div>
     </div>
-    <div v-else class="h-20 flex items-center justify-center text-sm opacity-30 animate-pulse mb-4 pb-4 border-b">
+    <div v-else class="h-20 flex items-center justify-center text-sm opacity-30 animate-pulse mb-3 pb-3 border-b">
       Syncing...
     </div>
 
     <!-- Analysis Section (Only for Recognized/System Items) -->
     
-      <div v-if="priceChart" class="mb-4">
-        <div class="text-xs opacity-60 mb-4 uppercase">價格區間分析</div>
+      <div v-if="priceChart" class="mb-3">
+        <div class="text-[10px] opacity-60 mb-2 uppercase tracking-wider">價格區間分析</div>
         <div
-          class="relative h-16 bg-linear-to-r from-transparent via-white/5 to-transparent rounded-lg my-12"
+          class="relative h-16 bg-linear-to-r from-transparent via-white/5 to-transparent rounded-lg my-8"
         >
-          <div class="absolute inset-0 flex justify-between px-2">
-            <div
-              v-for="i in 5"
-              :key="i"
-              class="w-px h-full opacity-10"
-              :class="isStealth ? 'bg-gray-300' : 'bg-white'"
-            ></div>
-          </div>
-
+        
           <div v-for="point in priceChart" :key="point.label + point.value">
             <div
               v-if="point.isRange && point.positionEnd"
@@ -342,7 +342,7 @@ const getHitTypeClass = (type, isStealth) => {
               :style="{ left: point.position + '%', width: point.positionEnd - point.position + '%' }"
             >
               <div
-                class="absolute -top-8 left-1/2 -translate-x-1/2 text-[10px] font-bold whitespace-nowrap"
+                class="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold whitespace-nowrap"
                 :class="isStealth ? 'text-slate-600' : 'text-cyan-400'"
               >
                 {{ point.label }}
@@ -358,9 +358,9 @@ const getHitTypeClass = (type, isStealth) => {
                 class="w-px h-16 opacity-30"
                 :class="{
                   'bg-cyan-500': point.color === 'cyan' && !isStealth,
-                  'bg-green-500': point.color === 'green' && !isStealth,
-                  'bg-red-500': point.color === 'red' && !isStealth,
-                  'bg-orange-500': point.color === 'orange' && !isStealth,
+                  'bg-emerald-500': point.color === 'emerald' && !isStealth,
+                  'bg-rose-500': point.color === 'rose' && !isStealth,
+                  'bg-amber-500': point.color === 'amber' && !isStealth,
                   'bg-white': point.isCurrent && !isStealth,
                   'bg-slate-800': point.isCurrent && point.isUp && isStealth,
                   'bg-slate-400': point.isCurrent && !point.isUp && isStealth,
@@ -373,9 +373,9 @@ const getHitTypeClass = (type, isStealth) => {
                 class="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 shadow-lg"
                 :class="{
                   'bg-cyan-500 border-cyan-400': point.color === 'cyan' && !isStealth,
-                  'bg-green-500 border-green-400': point.color === 'green' && !isStealth,
-                  'bg-red-500 border-red-400': point.color === 'red' && !isStealth,
-                  'bg-orange-500 border-orange-400': point.color === 'orange' && !isStealth,
+                  'bg-emerald-500 border-emerald-400': point.color === 'emerald' && !isStealth,
+                  'bg-rose-500 border-rose-400': point.color === 'rose' && !isStealth,
+                  'bg-amber-500 border-amber-400': point.color === 'amber' && !isStealth,
                   'bg-white border-zinc-200 scale-125': point.isCurrent && !isStealth,
                   'bg-slate-800 border-slate-900 scale-125': point.isCurrent && point.isUp && isStealth,
                   'bg-slate-300 border-slate-400 scale-110': point.isCurrent && point.isDown && isStealth,
@@ -383,7 +383,7 @@ const getHitTypeClass = (type, isStealth) => {
                 }"
               ></div>
               <div
-                class="absolute -top-8 text-[10px] font-bold whitespace-nowrap"
+                class="absolute -top-6 text-[10px] font-bold whitespace-nowrap"
                 :class="[
                   isStealth ? 'text-slate-600' : 'text-white',
                   point.isCurrent ? 'scale-110' : 'opacity-70',
@@ -392,7 +392,7 @@ const getHitTypeClass = (type, isStealth) => {
               >
                 {{ point.label }}
               </div>
-              <div class="absolute -bottom-8 text-[9px] font-mono opacity-70 whitespace-nowrap">
+              <div class="absolute -bottom-6 text-[9px] font-mono opacity-70 whitespace-nowrap">
                 {{ point.value.toFixed(1) }}
               </div>
             </div>
@@ -400,7 +400,7 @@ const getHitTypeClass = (type, isStealth) => {
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-3 mt-4">
+      <div class="grid grid-cols-2 gap-2 mt-3">
         <div
           v-for="conf in [
             INDICATOR_COLORS.swap,
@@ -409,7 +409,7 @@ const getHitTypeClass = (type, isStealth) => {
             INDICATOR_COLORS.wave,
           ].filter(c => item[c.key])"
           :key="conf.key"
-          class="relative flex flex-col p-3 rounded-xl border transition-all duration-500"
+          class="relative flex flex-col p-2 rounded-xl border transition-all duration-500"
           :class="[
             isStealth ? 'bg-gray-50 border-gray-100' : 'bg-white/5 border-transparent',
             priceInRange.matchedIndicators.includes(conf.label)
@@ -452,25 +452,45 @@ const getHitTypeClass = (type, isStealth) => {
       </div>
 
       <!-- Hit History -->
-      <div v-if="item.hitHistory && item.hitHistory.length > 0" class="mt-4 pt-4 border-t" :class="isStealth ? 'border-gray-200' : 'border-zinc-800'">
-        <h4 class="text-[10px] font-bold opacity-50 mb-2 uppercase tracking-wider">觸及歷史</h4>
-        <ul class="space-y-1.5 text-xs">
-          <li v-for="hit in item.hitHistory.slice(0, 3)" :key="hit._id" class="flex justify-between items-center opacity-80 hover:opacity-100">
-            <span class="font-bold px-1.5 py-0.5 rounded text-[9px] tracking-tight" :class="getHitTypeClass(hit.type, isStealth)">
-              {{ getHitTypeName(hit.type) }}
-            </span>
-            <span class="font-mono" :class="isStealth ? 'text-slate-600' : 'text-gray-300'">
-              {{ hit.triggerPrice.toFixed(2) }}
-            </span>
-            <span class="opacity-60 font-mono text-[11px]">
-              {{ new Date(hit.happenedAt).toLocaleDateString('en-CA') }}
-            </span>
-          </li>
-        </ul>
+      <div v-if="item.hitHistory && item.hitHistory.length > 0" class="mt-2 pt-2 border-t" :class="isStealth ? 'border-gray-200' : 'border-zinc-800'">
+        <div class="flex justify-between items-center mb-1.5">
+          <h4 class="text-[10px] font-bold opacity-50 uppercase tracking-wider">觸及歷史</h4>
+          <span v-if="item.hitHistory.length > 3" class="text-[9px] opacity-30 font-mono">SCROLL</span>
+        </div>
+        <div class="max-h-18 overflow-y-auto pr-1 custom-scrollbar">
+          <ul class="space-y-1 text-xs">
+            <li v-for="hit in item.hitHistory.slice(0, 10)" :key="hit._id" 
+              class="flex justify-between items-center transition-all py-0.5 px-1 rounded"
+              :class="[
+                isToday(hit.happenedAt) 
+                  ? (isStealth ? 'bg-blue-50/50 ring-1 ring-blue-100' : 'bg-white/10 ring-1 ring-white/10 shadow-sm')
+                  : 'opacity-70 hover:opacity-100'
+              ]"
+            >
+              <div class="flex items-center gap-1.5">
+                <span class="relative flex h-1.5 w-1.5">
+                  <template v-if="isToday(hit.happenedAt)">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
+                  </template>
+                </span>
+                <span class="font-bold px-1.5 py-0.5 rounded text-[9px] tracking-tight" :class="getHitTypeClass(hit.type, isStealth)">
+                  {{ getHitTypeName(hit.type) }}
+                </span>
+              </div>
+              <span class="font-mono font-bold" :class="isStealth ? 'text-slate-900' : 'text-white'">
+                {{ hit.triggerPrice.toFixed(2) }}
+              </span>
+              <span class="font-mono text-[10px]" :class="isToday(hit.happenedAt) ? 'text-red-400 font-bold' : 'opacity-40'">
+                {{ isToday(hit.happenedAt) ? 'TODAY' : new Date(hit.happenedAt).toLocaleDateString('en-CA').slice(5) }}
+              </span>
+            </li>
+          </ul>
+        </div>
       </div>
 
       <div
-        class="mt-4 pt-3 border-t text-xs opacity-50 flex justify-between items-center"
+        class="mt-3 pt-2 border-t text-xs opacity-50 flex justify-between items-center"
         :class="isStealth ? 'border-gray-100' : 'border-zinc-700/50'"
       >
         <span>{{
@@ -525,16 +545,16 @@ const getHitTypeClass = (type, isStealth) => {
   animation: limit-glow-green 2s ease-in-out infinite;
 }
 
-@keyframes indicator-glow-green {
+@keyframes indicator-glow-emerald {
   0%, 100% {
-    background-color: rgba(34, 197, 94, 0.2);
-    border-color: rgba(34, 197, 94, 0.6);
-    box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+    background-color: rgba(16, 185, 129, 0.2);
+    border-color: rgba(16, 185, 129, 0.6);
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
   }
   50% {
-    background-color: rgba(34, 197, 94, 0.35);
-    border-color: rgba(34, 197, 94, 1);
-    box-shadow: 0 0 30px rgba(34, 197, 94, 0.5);
+    background-color: rgba(16, 185, 129, 0.35);
+    border-color: rgba(16, 185, 129, 1);
+    box-shadow: 0 0 30px rgba(16, 185, 129, 0.5);
   }
 }
 
@@ -551,46 +571,75 @@ const getHitTypeClass = (type, isStealth) => {
   }
 }
 
-@keyframes indicator-glow-orange {
+@keyframes indicator-glow-amber {
   0%, 100% {
-    background-color: rgba(249, 115, 22, 0.2);
-    border-color: rgba(249, 115, 22, 0.6);
-    box-shadow: 0 0 20px rgba(249, 115, 22, 0.3);
+    background-color: rgba(245, 158, 11, 0.2);
+    border-color: rgba(245, 158, 11, 0.6);
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
   }
   50% {
-    background-color: rgba(249, 115, 22, 0.35);
-    border-color: rgba(249, 115, 22, 1);
-    box-shadow: 0 0 30px rgba(249, 115, 22, 0.5);
+    background-color: rgba(245, 158, 11, 0.35);
+    border-color: rgba(245, 158, 11, 1);
+    box-shadow: 0 0 30px rgba(245, 158, 11, 0.5);
   }
 }
 
-@keyframes indicator-glow-red {
+@keyframes indicator-glow-rose {
   0%, 100% {
-    background-color: rgba(239, 68, 68, 0.2);
-    border-color: rgba(239, 68, 68, 0.6);
-    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+    background-color: rgba(244, 63, 94, 0.2);
+    border-color: rgba(244, 63, 94, 0.6);
+    box-shadow: 0 0 20px rgba(244, 63, 94, 0.3);
   }
   50% {
-    background-color: rgba(239, 68, 68, 0.35);
-    border-color: rgba(239, 68, 68, 1);
-    box-shadow: 0 0 30px rgba(239, 68, 68, 0.5);
+    background-color: rgba(244, 63, 94, 0.35);
+    border-color: rgba(244, 63, 94, 1);
+    box-shadow: 0 0 30px rgba(244, 63, 94, 0.5);
   }
 }
 
-.indicator-active-hit-green {
-  animation: indicator-glow-green 1.5s ease-in-out infinite;
+.indicator-active-hit-emerald {
+  animation: indicator-glow-emerald 1.5s ease-in-out infinite;
   z-index: 10;
 }
 .indicator-active-hit-cyan {
   animation: indicator-glow-cyan 1.5s ease-in-out infinite;
   z-index: 10;
 }
-.indicator-active-hit-orange {
-  animation: indicator-glow-orange 1.5s ease-in-out infinite;
+.indicator-active-hit-amber {
+  animation: indicator-glow-amber 1.5s ease-in-out infinite;
   z-index: 10;
 }
-.indicator-active-hit-red {
-  animation: indicator-glow-red 1.5s ease-in-out infinite;
+.indicator-active-hit-rose {
+  animation: indicator-glow-rose 1.5s ease-in-out infinite;
   z-index: 10;
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(155, 155, 155, 0.5) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(155, 155, 155, 0.4);
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(155, 155, 155, 0.7);
+}
+
+/* Stealth Mode adjustments for scrollbar */
+.is-stealth .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+}
+.is-stealth .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.4);
 }
 </style>

@@ -324,7 +324,7 @@ const handleSavePrice = async (newPrice) => {
               <span
                 v-if="stock.swapRef"
                 class="font-mono text-sm"
-                :class="isStealth ? 'text-green-600' : INDICATOR_COLORS.swap.textClass"
+                :class="isStealth ? INDICATOR_COLORS.swap.stealthTextClass : INDICATOR_COLORS.swap.textClass"
               >
                 {{ stock.swapRef }}
               </span>
@@ -336,7 +336,7 @@ const handleSavePrice = async (newPrice) => {
               <span
                 v-if="stock.support"
                 class="font-mono text-sm"
-                :class="isStealth ? 'text-cyan-600' : INDICATOR_COLORS.support.textClass"
+                :class="isStealth ? INDICATOR_COLORS.support.stealthTextClass : INDICATOR_COLORS.support.textClass"
               >
                 {{ stock.support }}
               </span>
@@ -348,7 +348,7 @@ const handleSavePrice = async (newPrice) => {
               <span
                 v-if="stock.shortTermProfit"
                 class="font-mono text-sm"
-                :class="isStealth ? 'text-orange-600' : INDICATOR_COLORS.shortTerm.textClass"
+                :class="isStealth ? INDICATOR_COLORS.shortTerm.stealthTextClass : INDICATOR_COLORS.shortTerm.textClass"
               >
                 {{ stock.shortTermProfit }}
               </span>
@@ -360,7 +360,7 @@ const handleSavePrice = async (newPrice) => {
               <span
                 v-if="stock.waveProfit"
                 class="font-mono text-sm"
-                :class="isStealth ? 'text-red-600' : INDICATOR_COLORS.wave.textClass"
+                :class="isStealth ? INDICATOR_COLORS.wave.stealthTextClass : INDICATOR_COLORS.wave.textClass"
               >
                 {{ stock.waveProfit }}
               </span>

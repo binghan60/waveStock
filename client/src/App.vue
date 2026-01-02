@@ -30,7 +30,7 @@ onUnmounted(() => {
 <template>
   <div
     class="min-h-screen transition-colors duration-500 font-sans pb-20 selection:bg-blue-500/30"
-    :class="isStealth ? 'bg-slate-50 text-slate-700' : 'bg-[#0f0f0f] text-gray-100'"
+    :class="isStealth ? 'bg-[#F8F9FA] text-[#3C4043]' : 'bg-[#0f0f0f] text-gray-100'"
   >
     <div class="max-w-7xl mx-auto p-4 md:p-8">
       <header
