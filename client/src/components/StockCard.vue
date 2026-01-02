@@ -115,7 +115,7 @@ const priceChart = computed(() => {
         targets.push({
           label: '支撐',
           value: parts[0],
-          color: 'blue',
+          color: 'cyan',
           isRange: true,
           rangeEnd: parts[1],
           rangeLabel: `${parts[0]}-${parts[1]}`,
@@ -123,14 +123,14 @@ const priceChart = computed(() => {
       }
     } else {
       const val = parseFloat(supportStr)
-      if (!isNaN(val)) targets.push({ label: '支撐', value: val, color: 'blue' })
+      if (!isNaN(val)) targets.push({ label: '支撐', value: val, color: 'cyan' })
     }
   }
 
   const otherKeys = [
-    { key: 'shortTermProfit', label: '短線', color: 'green' },
-    { key: 'waveProfit', label: '波段', color: 'purple' },
-    { key: 'swapRef', label: '換股', color: 'orange' },
+    { key: 'shortTermProfit', label: '短線', color: 'orange' },
+    { key: 'waveProfit', label: '波段', color: 'red' },
+    { key: 'swapRef', label: '換股', color: 'green' },
   ]
 
   otherKeys.forEach((item) => {
@@ -202,10 +202,10 @@ const getHitTypeName = (type) => {
 
 const getHitTypeClass = (type, isStealth) => {
   const colors = {
-    shortTerm: { normal: 'bg-green-500/20 text-green-300', stealth: 'bg-green-100 text-green-700' },
-    wave: { normal: 'bg-purple-500/20 text-purple-300', stealth: 'bg-purple-100 text-purple-700' },
-    support: { normal: 'bg-blue-500/20 text-blue-300', stealth: 'bg-blue-100 text-blue-700' },
-    swap: { normal: 'bg-orange-500/20 text-orange-400', stealth: 'bg-orange-100 text-orange-700' },
+    shortTerm: { normal: 'bg-orange-500/20 text-orange-300', stealth: 'bg-orange-100 text-orange-700' },
+    wave: { normal: 'bg-red-500/20 text-red-300', stealth: 'bg-red-100 text-red-700' },
+    support: { normal: 'bg-cyan-500/20 text-cyan-300', stealth: 'bg-cyan-100 text-cyan-700' },
+    swap: { normal: 'bg-green-500/20 text-green-400', stealth: 'bg-green-100 text-green-700' },
   }
   const style = colors[type] || { normal: 'bg-zinc-700 text-zinc-300', stealth: 'bg-slate-200 text-slate-600' }
   return isStealth ? style.stealth : style.normal
@@ -333,12 +333,12 @@ const getHitTypeClass = (type, isStealth) => {
           <div v-for="point in priceChart" :key="point.label + point.value">
             <div
               v-if="point.isRange && point.positionEnd"
-              class="absolute h-16 bg-blue-500/20 border-l-2 border-r-2 border-blue-500"
+              class="absolute h-16 bg-cyan-500/20 border-l-2 border-r-2 border-cyan-500"
               :style="{ left: point.position + '%', width: point.positionEnd - point.position + '%' }"
             >
               <div
                 class="absolute -top-8 left-1/2 -translate-x-1/2 text-[10px] font-bold whitespace-nowrap"
-                :class="isStealth ? 'text-slate-600' : 'text-blue-400'"
+                :class="isStealth ? 'text-slate-600' : 'text-cyan-400'"
               >
                 {{ point.label }}
               </div>
@@ -352,11 +352,11 @@ const getHitTypeClass = (type, isStealth) => {
               <div
                 class="w-px h-16 opacity-30"
                 :class="{
-                  'bg-blue-500': point.color === 'blue' && !isStealth,
+                  'bg-cyan-500': point.color === 'cyan' && !isStealth,
                   'bg-green-500': point.color === 'green' && !isStealth,
-                  'bg-purple-500': point.color === 'purple' && !isStealth,
+                  'bg-red-500': point.color === 'red' && !isStealth,
                   'bg-orange-500': point.color === 'orange' && !isStealth,
-                  'bg-red-500': point.isCurrent && !isStealth,
+                  'bg-white': point.isCurrent && !isStealth,
                   'bg-slate-800': point.isCurrent && point.isUp && isStealth,
                   'bg-slate-400': point.isCurrent && !point.isUp && isStealth,
                   'bg-slate-300': !point.isCurrent && isStealth,
@@ -367,11 +367,11 @@ const getHitTypeClass = (type, isStealth) => {
               <div
                 class="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 shadow-lg"
                 :class="{
-                  'bg-blue-500 border-blue-400': point.color === 'blue' && !isStealth,
+                  'bg-cyan-500 border-cyan-400': point.color === 'cyan' && !isStealth,
                   'bg-green-500 border-green-400': point.color === 'green' && !isStealth,
-                  'bg-purple-500 border-purple-400': point.color === 'purple' && !isStealth,
+                  'bg-red-500 border-red-400': point.color === 'red' && !isStealth,
                   'bg-orange-500 border-orange-400': point.color === 'orange' && !isStealth,
-                  'bg-red-500 border-red-400 scale-125': point.isCurrent && !isStealth,
+                  'bg-white border-zinc-200 scale-125': point.isCurrent && !isStealth,
                   'bg-slate-800 border-slate-900 scale-125': point.isCurrent && point.isUp && isStealth,
                   'bg-slate-300 border-slate-400 scale-110': point.isCurrent && point.isDown && isStealth,
                   'bg-slate-200 border-slate-300': !point.isCurrent && isStealth,
@@ -398,10 +398,10 @@ const getHitTypeClass = (type, isStealth) => {
       <div class="grid grid-cols-2 gap-3 mt-4">
         <div
           v-for="conf in [
-            { label: '換股', key: 'swapRef', color: 'text-orange-400', indicatorColor: 'orange', bgColor: 'bg-orange-500/20' },
-            { label: '支撐', key: 'support', color: 'text-blue-400', indicatorColor: 'blue', bgColor: 'bg-blue-500/20' },
-            { label: '短線', key: 'shortTermProfit', color: 'text-green-400', indicatorColor: 'green', bgColor: 'bg-green-500/20' },
-            { label: '波段', key: 'waveProfit', color: 'text-purple-400', indicatorColor: 'purple', bgColor: 'bg-purple-500/20' },
+            { label: '換股', key: 'swapRef', color: 'text-green-400', indicatorColor: 'green', bgColor: 'bg-green-500/20' },
+            { label: '支撐', key: 'support', color: 'text-cyan-400', indicatorColor: 'cyan', bgColor: 'bg-cyan-500/20' },
+            { label: '短線', key: 'shortTermProfit', color: 'text-orange-400', indicatorColor: 'orange', bgColor: 'bg-orange-500/20' },
+            { label: '波段', key: 'waveProfit', color: 'text-red-400', indicatorColor: 'red', bgColor: 'bg-red-500/20' },
           ].filter(c => item[c.key])"
           :key="conf.key"
           class="relative flex flex-col p-3 rounded-xl border transition-all duration-500"
@@ -520,32 +520,6 @@ const getHitTypeClass = (type, isStealth) => {
   animation: limit-glow-green 2s ease-in-out infinite;
 }
 
-@keyframes indicator-glow-orange {
-  0%, 100% {
-    background-color: rgba(249, 115, 22, 0.2);
-    border-color: rgba(249, 115, 22, 0.6);
-    box-shadow: 0 0 20px rgba(249, 115, 22, 0.3);
-  }
-  50% {
-    background-color: rgba(249, 115, 22, 0.35);
-    border-color: rgba(249, 115, 22, 1);
-    box-shadow: 0 0 30px rgba(249, 115, 22, 0.5);
-  }
-}
-
-@keyframes indicator-glow-blue {
-  0%, 100% {
-    background-color: rgba(59, 130, 246, 0.2);
-    border-color: rgba(59, 130, 246, 0.6);
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
-  }
-  50% {
-    background-color: rgba(59, 130, 246, 0.35);
-    border-color: rgba(59, 130, 246, 1);
-    box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
-  }
-}
-
 @keyframes indicator-glow-green {
   0%, 100% {
     background-color: rgba(34, 197, 94, 0.2);
@@ -559,33 +533,59 @@ const getHitTypeClass = (type, isStealth) => {
   }
 }
 
-@keyframes indicator-glow-purple {
+@keyframes indicator-glow-cyan {
   0%, 100% {
-    background-color: rgba(168, 85, 247, 0.2);
-    border-color: rgba(168, 85, 247, 0.6);
-    box-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
+    background-color: rgba(6, 182, 212, 0.2);
+    border-color: rgba(6, 182, 212, 0.6);
+    box-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
   }
   50% {
-    background-color: rgba(168, 85, 247, 0.35);
-    border-color: rgba(168, 85, 247, 1);
-    box-shadow: 0 0 30px rgba(168, 85, 247, 0.5);
+    background-color: rgba(6, 182, 212, 0.35);
+    border-color: rgba(6, 182, 212, 1);
+    box-shadow: 0 0 30px rgba(6, 182, 212, 0.5);
   }
 }
 
-.indicator-active-hit-orange {
-  animation: indicator-glow-orange 1.5s ease-in-out infinite;
-  z-index: 10;
+@keyframes indicator-glow-orange {
+  0%, 100% {
+    background-color: rgba(249, 115, 22, 0.2);
+    border-color: rgba(249, 115, 22, 0.6);
+    box-shadow: 0 0 20px rgba(249, 115, 22, 0.3);
+  }
+  50% {
+    background-color: rgba(249, 115, 22, 0.35);
+    border-color: rgba(249, 115, 22, 1);
+    box-shadow: 0 0 30px rgba(249, 115, 22, 0.5);
+  }
 }
-.indicator-active-hit-blue {
-  animation: indicator-glow-blue 1.5s ease-in-out infinite;
-  z-index: 10;
+
+@keyframes indicator-glow-red {
+  0%, 100% {
+    background-color: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.6);
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+  }
+  50% {
+    background-color: rgba(239, 68, 68, 0.35);
+    border-color: rgba(239, 68, 68, 1);
+    box-shadow: 0 0 30px rgba(239, 68, 68, 0.5);
+  }
 }
+
 .indicator-active-hit-green {
   animation: indicator-glow-green 1.5s ease-in-out infinite;
   z-index: 10;
 }
-.indicator-active-hit-purple {
-  animation: indicator-glow-purple 1.5s ease-in-out infinite;
+.indicator-active-hit-cyan {
+  animation: indicator-glow-cyan 1.5s ease-in-out infinite;
+  z-index: 10;
+}
+.indicator-active-hit-orange {
+  animation: indicator-glow-orange 1.5s ease-in-out infinite;
+  z-index: 10;
+}
+.indicator-active-hit-red {
+  animation: indicator-glow-red 1.5s ease-in-out infinite;
   z-index: 10;
 }
 </style>

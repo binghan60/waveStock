@@ -81,6 +81,7 @@ export const useStockStore = defineStore('stock', () => {
   const pinnedList = ref([])
   const isLoading = ref(false)
   const lastUpdated = ref('')
+  const lastDashboardUpdate = ref(0) // 新增：記錄上次抓取 dashboard 的時間
   const isStealth = ref(false)
   const activeTab = ref('dashboard') // 'dashboard' or 'dataTable'
 
@@ -140,13 +141,18 @@ export const useStockStore = defineStore('stock', () => {
     savePinnedList()
   }
 
-  const fetchData = async () => {
+  const fetchData = async (forceDashboard = false) => {
     try {
+      const now = Date.now()
       const manual = localStorage.getItem('manual-stocks')
       if (manual) rawManualStocks.value = JSON.parse(manual)
 
-      const res = await api.getDashboardData()
-      rawRecognizedStocks.value = res.data.recognizedStocks || []
+      // 只有在強制刷新、或是超過 60 秒沒更新 dashboard 時才呼叫
+      if (forceDashboard || now - lastDashboardUpdate.value > 60000) {
+        const res = await api.getDashboardData()
+        rawRecognizedStocks.value = res.data.recognizedStocks || []
+        lastDashboardUpdate.value = now
+      }
 
       const manualSymbols = rawManualStocks.value.map((s) => s.symbol)
       const recognizedSymbols = rawRecognizedStocks.value.map((s) => s.code)
@@ -175,7 +181,7 @@ export const useStockStore = defineStore('stock', () => {
 
   const startAutoRefresh = async () => {
     isLoading.value = true
-    await fetchData()
+    await fetchData(true) // 初始載入強制更新 dashboard
     isLoading.value = false
 
     const updateTimer = () => {
