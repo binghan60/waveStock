@@ -14,7 +14,6 @@ const { details } = useStockDetails(toRef(props, 'item'), toRef(props, 'isStealt
 const isLimitHit = computed(() => {
   return details.value.rawAbsPercent >= 9.5
 })
-
 </script>
 
 <template>
@@ -25,7 +24,7 @@ const isLimitHit = computed(() => {
         ? 'bg-white border-gray-200 shadow-sm'
         : 'bg-zinc-900 border-zinc-800 hover:border-zinc-600 hover:bg-zinc-800/80 hover:-translate-y-1 hover:shadow-xl',
       { 'limit-up-animation': isLimitHit && details.isUp && !isStealth },
-      { 'limit-down-animation': isLimitHit && details.isDown && !isStealth }
+      { 'limit-down-animation': isLimitHit && details.isDown && !isStealth },
     ]"
   >
     <div
@@ -48,7 +47,7 @@ const isLimitHit = computed(() => {
             {{ item.symbol }}
           </span>
           <span class="text-xs opacity-50" v-if="item.market">{{
-            isStealth ? 'Node' : item.market.name
+            isStealth ? item.market.name : item.market.name
           }}</span>
         </div>
       </div>
@@ -57,9 +56,15 @@ const isLimitHit = computed(() => {
         <button
           @click="$emit('togglePin', item.symbol)"
           class="transition-all p-1 text-lg"
-          :class="item.isPinned 
-            ? (isStealth ? 'text-yellow-600 hover:text-yellow-700' : 'text-yellow-400 hover:text-yellow-300')
-            : 'opacity-0 group-hover:opacity-50 hover:opacity-100 ' + (isStealth ? 'text-gray-400 hover:text-yellow-600' : 'text-gray-600 hover:text-yellow-400')
+          :class="
+            item.isPinned
+              ? isStealth
+                ? 'text-yellow-600 hover:text-yellow-700'
+                : 'text-yellow-400 hover:text-yellow-300'
+              : 'opacity-0 group-hover:opacity-50 hover:opacity-100 ' +
+                (isStealth
+                  ? 'text-gray-400 hover:text-yellow-600'
+                  : 'text-gray-600 hover:text-yellow-400')
           "
           :title="item.isPinned ? '取消置頂' : '置頂'"
         >
@@ -77,13 +82,15 @@ const isLimitHit = computed(() => {
 
     <div v-if="item.market" class="space-y-3">
       <div class="flex items-end gap-3">
-        <div 
-          class="text-4xl leading-none tabular-nums tracking-tight transition-all duration-500" 
+        <div
+          class="text-4xl leading-none tabular-nums tracking-tight transition-all duration-500"
           :class="[
             details.colorClass,
             isLimitHit && !isStealth
-              ? (details.isUp ? 'bg-red-500 text-white px-3 py-1 rounded-lg' : 'bg-green-500 text-white px-3 py-1 rounded-lg')
-              : ''
+              ? details.isUp
+                ? 'bg-red-500 text-white px-3 py-1 rounded-lg'
+                : 'bg-green-500 text-white px-3 py-1 rounded-lg'
+              : '',
           ]"
         >
           {{ formatPrice(item.market.currentPrice) }}
@@ -118,7 +125,8 @@ const isLimitHit = computed(() => {
 
 <style scoped>
 @keyframes limit-glow-red {
-  0%, 100% {
+  0%,
+  100% {
     background-color: rgba(239, 68, 68, 0.05);
     border-color: rgba(239, 68, 68, 0.7);
     box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
@@ -131,7 +139,8 @@ const isLimitHit = computed(() => {
 }
 
 @keyframes limit-glow-green {
-  0%, 100% {
+  0%,
+  100% {
     background-color: rgba(34, 197, 94, 0.05);
     border-color: rgba(34, 197, 94, 0.7);
     box-shadow: 0 0 15px rgba(34, 197, 94, 0.4);

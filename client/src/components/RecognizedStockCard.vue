@@ -241,7 +241,7 @@ const priceChart = computed(() => {
           {{ item.isPinned ? '📌' : '📍' }}
         </button>
         <span v-if="item.market" class="text-xs opacity-50">
-          {{ isStealth ? 'Node' : item.market.name }}
+          {{ isStealth ? item.market.name : item.market.name }}
         </span>
       </div>
       <!-- 刪除按鈕已移除 -->
