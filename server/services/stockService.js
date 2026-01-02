@@ -89,10 +89,11 @@ async function fetchStockDataWithRetry(stockIds, retryCount = 0) {
       .map((msg) => {
         let currentPrice = msg.z
 
-        if (currentPrice === '-') {
-          if (msg.b && msg.b !== '-') {
+        // 如果成交價為空或 0，嘗試使用買入/賣出價，最後用昨收價
+        if (currentPrice === '-' || !currentPrice || parseFloat(currentPrice) <= 0) {
+          if (msg.b && msg.b !== '-' && parseFloat(msg.b.split('_')[0]) > 0) {
             currentPrice = msg.b.split('_')[0]
-          } else if (msg.a && msg.a !== '-') {
+          } else if (msg.a && msg.a !== '-' && parseFloat(msg.a.split('_')[0]) > 0) {
             currentPrice = msg.a.split('_')[0]
           } else {
             currentPrice = msg.y

@@ -2,8 +2,10 @@
 import { computed, toRef } from 'vue'
 import { useStockFormatter } from '@/composables/useStockFormatter'
 import { useStockDetails } from '@/composables/useStockDetails'
+import { useStockColors } from '@/composables/useStockColors'
 
 const { formatPrice, formatNumber } = useStockFormatter()
+const { INDICATOR_COLORS } = useStockColors()
 
 const props = defineProps({
   item: Object,
@@ -201,14 +203,18 @@ const getHitTypeName = (type) => {
 }
 
 const getHitTypeClass = (type, isStealth) => {
-  const colors = {
-    shortTerm: { normal: 'bg-orange-500/20 text-orange-300', stealth: 'bg-orange-100 text-orange-700' },
-    wave: { normal: 'bg-red-500/20 text-red-300', stealth: 'bg-red-100 text-red-700' },
-    support: { normal: 'bg-cyan-500/20 text-cyan-300', stealth: 'bg-cyan-100 text-cyan-700' },
-    swap: { normal: 'bg-green-500/20 text-green-400', stealth: 'bg-green-100 text-green-700' },
+  const mapping = {
+    shortTerm: INDICATOR_COLORS.shortTerm,
+    wave: INDICATOR_COLORS.wave,
+    support: INDICATOR_COLORS.support,
+    swap: INDICATOR_COLORS.swap,
   }
-  const style = colors[type] || { normal: 'bg-zinc-700 text-zinc-300', stealth: 'bg-slate-200 text-slate-600' }
-  return isStealth ? style.stealth : style.normal
+  const config = mapping[type]
+  if (!config) return isStealth ? 'bg-slate-200 text-slate-600' : 'bg-zinc-700 text-zinc-300'
+  
+  return isStealth 
+    ? `bg-${config.indicatorClass}-100 text-${config.indicatorClass}-700`
+    : `${config.bgClass} ${config.textClass}`
 }
 </script>
 
@@ -398,10 +404,10 @@ const getHitTypeClass = (type, isStealth) => {
       <div class="grid grid-cols-2 gap-3 mt-4">
         <div
           v-for="conf in [
-            { label: '換股', key: 'swapRef', color: 'text-green-400', indicatorColor: 'green', bgColor: 'bg-green-500/20' },
-            { label: '支撐', key: 'support', color: 'text-cyan-400', indicatorColor: 'cyan', bgColor: 'bg-cyan-500/20' },
-            { label: '短線', key: 'shortTermProfit', color: 'text-orange-400', indicatorColor: 'orange', bgColor: 'bg-orange-500/20' },
-            { label: '波段', key: 'waveProfit', color: 'text-red-400', indicatorColor: 'red', bgColor: 'bg-red-500/20' },
+            INDICATOR_COLORS.swap,
+            INDICATOR_COLORS.support,
+            INDICATOR_COLORS.shortTerm,
+            INDICATOR_COLORS.wave,
           ].filter(c => item[c.key])"
           :key="conf.key"
           class="relative flex flex-col p-3 rounded-xl border transition-all duration-500"
@@ -409,9 +415,9 @@ const getHitTypeClass = (type, isStealth) => {
             isStealth ? 'bg-gray-50 border-gray-100' : 'bg-white/5 border-transparent',
             priceInRange.matchedIndicators.includes(conf.label)
               ? [
-                  !isStealth ? `indicator-active-hit-${conf.indicatorColor}` : 'border-slate-400 shadow-md',
+                  !isStealth ? `indicator-active-hit-${conf.indicatorClass}` : 'border-slate-400 shadow-md',
                   'border-2',
-                  isStealth ? 'bg-gray-200 text-slate-900 font-bold' : conf.color,
+                  isStealth ? 'bg-gray-200 text-slate-900 font-bold' : conf.textClass,
                 ]
               : '',
           ]"
@@ -423,7 +429,7 @@ const getHitTypeClass = (type, isStealth) => {
             <span
               v-if="priceChart"
               class="text-[10px] font-mono font-bold"
-              :class="[isStealth ? 'text-slate-500' : conf.color]"
+              :class="[isStealth ? 'text-slate-500' : conf.textClass]"
             >
               <template v-if="priceChart.find((p) => p.label === conf.label)">
                 {{
@@ -439,7 +445,7 @@ const getHitTypeClass = (type, isStealth) => {
           </div>
           <div
             class="text-sm font-mono font-black"
-            :class="isStealth ? 'text-slate-700' : conf.color"
+            :class="isStealth ? 'text-slate-700' : conf.textClass"
           >
             {{ formatAnalysisPrice(item[conf.key]) }}
           </div>
