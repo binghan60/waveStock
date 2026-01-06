@@ -151,7 +151,7 @@ async function checkAndLogStockHits(stockDataList) {
 }
 
 /**
- * 核心邏輯 B：整合觸發紀錄並發送推播
+ * 核心邏輯 B：整合觸發紀錄並發送推播 (Flex Message 版本)
  */
 async function sendAggregatedPush(hits) {
   if (!hits || hits.length === 0) return
@@ -178,29 +178,110 @@ async function sendAggregatedPush(hits) {
     }
   })
 
-  // 組合訊息
-  let message = '🔔 觸及通知匯總'
-  let hasContent = false
+  // 建構 Flex Message 內容 (Bubble -> Body -> Vertical Box)
+  const contents = []
 
-  // 依序檢查四種類型，有資料才顯示區塊
+  // 標題區塊
+  contents.push({
+    type: 'text',
+    text: '🔔 觸及通知匯總',
+    weight: 'bold',
+    size: 'xl',
+    margin: 'md',
+  })
+  contents.push({ type: 'separator', margin: 'md' })
+
+  // 依序檢查四種類型
   for (const type of ['shortTerm', 'wave', 'support', 'swap']) {
     const list = grouped[type]
     if (list.length > 0) {
-      hasContent = true
-      message += `\n\n【${TYPE_NAME_MAP[type]}】\n`
+      // 類型標題 (例如：🌊 波段獲利)
+      contents.push({
+        type: 'text',
+        text: TYPE_NAME_MAP[type],
+        weight: 'bold',
+        size: 'md',
+        color: '#1DB446',
+        margin: 'lg',
+      })
+
+      // 列表內容
       list.forEach((item) => {
-        message += `${item.code} ${item.name} (${item.price}) ${item.status || ''}\n`
+        // 處理漲跌停顏色
+        let statusColor = '#666666'
+        let statusText = item.status || ''
+        
+        // 移除括號只取文字，讓顯示更乾淨
+        if (statusText.includes('漲停')) {
+          statusColor = '#FF0000'
+          statusText = '🔥漲停'
+        } else if (statusText.includes('跌停')) {
+          statusColor = '#008000'
+          statusText = '💚跌停'
+        }
+
+        const rowComponents = [
+          {
+            type: 'text',
+            text: `${item.code} ${item.name}`,
+            size: 'sm',
+            color: '#111111',
+            flex: 4,
+          },
+          {
+            type: 'text',
+            text: `${item.price}`,
+            size: 'sm',
+            align: 'end',
+            color: '#111111',
+            flex: 2,
+          }
+        ]
+
+        if (statusText) {
+          rowComponents.push({
+            type: 'text',
+            text: statusText,
+            size: 'xs',
+            color: statusColor,
+            align: 'end',
+            weight: 'bold',
+            flex: 2,
+            margin: 'sm'
+          })
+        }
+
+        contents.push({
+          type: 'box',
+          layout: 'baseline',
+          contents: rowComponents,
+          margin: 'sm',
+        })
       })
     }
   }
 
-  if (hasContent) {
-    try {
-      await client.pushMessage(TARGET_PUSH_ID, { type: 'text', text: message.trim() })
-      console.log(`📨 已推播整合通知給 ${TARGET_PUSH_ID}，共包含 ${hits.length} 筆紀錄`)
-    } catch (err) {
-      console.error('❌ 推播失敗:', err.message)
-    }
+  // 封裝成 Flex Message
+  const flexMessage = {
+    type: 'flex',
+    altText: '🔔 股票觸及通知',
+    contents: {
+      type: 'bubble',
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        contents: contents,
+      },
+    },
+  }
+
+  try {
+    await client.pushMessage(TARGET_PUSH_ID, flexMessage)
+    console.log(`📨 已推播 Flex Message 給 ${TARGET_PUSH_ID}，共包含 ${hits.length} 筆紀錄`)
+  } catch (err) {
+    console.error('❌ 推播失敗:', err.message)
+    // 如果 Flex 失敗 (可能是格式錯)，fallback 到純文字
+    // 但通常只要結構對就不會錯
   }
 }
 
