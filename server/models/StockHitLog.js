@@ -33,13 +33,19 @@ const stockHitLogSchema = new mongoose.Schema(
     happenedAt: {
       type: Date,
       default: Date.now,
+    },
+    // 用於去重的日期字串 (YYYY-MM-DD)
+    dateStr: {
+      type: String,
+      required: true
     }
   },
   { timestamps: true }
 )
 
-// 建立索引：方便查詢「某支股票今天有沒有達標過」
-stockHitLogSchema.index({ stockId: 1, type: 1, happenedAt: -1 })
+// 建立唯一索引：確保同一支股票、同一種類型、同一天只能有一筆紀錄
+// 這能有效防止 Vercel Serverless 環境下的並發重複推播問題
+stockHitLogSchema.index({ stockId: 1, type: 1, dateStr: 1 }, { unique: true })
 
 const StockHitLog = mongoose.model('StockHitLog', stockHitLogSchema)
 

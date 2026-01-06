@@ -38,6 +38,7 @@ router.post('/push-message', async (req, res) => {
   }
 })
 
+
 /**
  * 核心邏輯 A：檢查股價是否觸及目標，並寫入 Log
  * @returns {Promise<Array>} 回傳此次檢查觸發的新紀錄列表
@@ -48,6 +49,8 @@ async function checkAndLogStockHits(stockDataList) {
 
   const startOfToday = new Date()
   startOfToday.setHours(0, 0, 0, 0)
+  // 產生今天的日期字串 (YYYY-MM-DD)，用於資料庫唯一索引去重
+  const dateStr = startOfToday.toISOString().split('T')[0]
 
   const newHits = []
 
@@ -118,21 +121,27 @@ async function checkAndLogStockHits(stockDataList) {
 
     // 3. 寫入 DB 並準備回傳
     for (const hit of finalHits) {
-      const existLog = await StockHitLog.findOne({
-        stockId: dbStock._id,
-        type: hit.type,
-        happenedAt: { $gte: startOfToday },
-      })
+      try {
+        // [防護 1] 先查詢是否已存在 (解決索引建立失敗時的重複問題)
+        const existLog = await StockHitLog.findOne({
+          stockId: dbStock._id,
+          type: hit.type,
+          dateStr: dateStr
+        })
 
-      if (!existLog) {
-        console.log(`✅ [${code}] ${hit.type} 觸發！現價 ${hit.compareVal} 門檻 ${hit.threshold}`)
+        if (existLog) {
+          // 今天已經紀錄過了，跳過
+          continue
+        }
 
+        // [防護 2] 嘗試寫入 (利用 Unique Index 防止並發重複)
         await StockHitLog.create({
           stockId: dbStock._id,
           code: dbStock.code,
           type: hit.type,
           targetPrice: hit.threshold,
           triggerPrice: hit.compareVal,
+          dateStr: dateStr 
         })
 
         newHits.push({
@@ -141,8 +150,16 @@ async function checkAndLogStockHits(stockDataList) {
           name: stockInfo.name || '',
           price: hit.compareVal,
           target: hit.threshold,
-          status: status, // 加入漲跌停狀態
+          status: status,
         })
+
+      } catch (err) {
+        // 如果錯誤代碼是 11000 (Duplicate Key Error)，代表今天已經紀錄過了，直接忽略
+        if (err.code === 11000) {
+          // console.log(`ℹ️ [${code}] ${hit.type} 今天已觸發過 (並發攔截)，跳過。`)
+        } else {
+          console.error(`❌ 寫入 StockHitLog 失敗:`, err)
+        }
       }
     }
   }
