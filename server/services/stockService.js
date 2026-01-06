@@ -111,6 +111,17 @@ async function fetchStockDataWithRetry(stockIds, retryCount = 0) {
           } else if (askPrice) {
             currentPrice = askPrice
           } else {
+            // [DEBUG] 這裡是用昨收價的最後防線，我們印出來看看為什麼前面的都失敗了
+            // 只針對特定格式 (例如 b 有值但沒被用) 印 Log，避免洗版
+            if ((msg.b && msg.b !== '-') || (msg.a && msg.a !== '-')) {
+              console.log(`⚠️ [${msg.c}] 價格解析異常 (使用昨收):`, {
+                z: msg.z,
+                b_raw: msg.b,
+                a_raw: msg.a,
+                parsed_bid: findFirstValidPrice(msg.b),
+                parsed_ask: findFirstValidPrice(msg.a)
+              })
+            }
             currentPrice = msg.y // 真的沒有才用昨收
           }
         }
