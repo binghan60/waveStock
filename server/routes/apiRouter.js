@@ -188,8 +188,9 @@ async function sendAggregatedPush(hits) {
     weight: 'bold',
     size: 'xl',
     margin: 'md',
+    color: '#FFFFFF' // 深色模式文字
   })
-  contents.push({ type: 'separator', margin: 'md' })
+  contents.push({ type: 'separator', margin: 'md', color: '#333333' })
 
   // 依序檢查四種類型
   for (const type of ['shortTerm', 'wave', 'support', 'swap']) {
@@ -201,66 +202,22 @@ async function sendAggregatedPush(hits) {
         text: TYPE_NAME_MAP[type],
         weight: 'bold',
         size: 'md',
-        color: '#1DB446',
+        color: '#FFD700', // 金色標題
         margin: 'lg',
       })
 
       // 列表內容
       list.forEach((item) => {
-        // 處理漲跌停標籤
-        let statusTag = null
         const statusText = item.status || ''
-
-        if (statusText.includes('漲停')) {
-          statusTag = {
-            type: 'text',
-            text: '漲',
-            size: 'xs',
-            color: '#FFFFFF',
-            weight: 'bold',
-            align: 'center',
-            gravity: 'center'
-          }
-        } else if (statusText.includes('跌停')) {
-          statusTag = {
-            type: 'text',
-            text: '跌',
-            size: 'xs',
-            color: '#FFFFFF',
-            weight: 'bold',
-            align: 'center',
-            gravity: 'center'
-          }
-        }
-
-        // 右側區塊：價格 + (標籤)
-        const rightContents = []
         
-        // 價格
-        rightContents.push({
-          type: 'text',
-          text: `${item.price}`,
-          size: 'sm',
-          color: '#111111',
-          align: 'end',
-          gravity: 'center',
-          flex: 0 // 不自動伸縮，依內容寬度
-        })
-
-        // 如果有標籤，加一個 Box 包紅/綠底色
-        if (statusTag) {
-          rightContents.push({
-            type: 'box',
-            layout: 'vertical',
-            backgroundColor: statusText.includes('漲停') ? '#FF0000' : '#008000',
-            cornerRadius: 'xs',
-            paddingStart: 'xs',
-            paddingEnd: 'xs',
-            margin: 'sm',
-            height: '20px',
-            justifyContent: 'center',
-            contents: [statusTag]
-          })
+        // 決定價格區塊的樣式
+        let priceBgColor = 'transparent' // 預設透明
+        let priceTextColor = '#FFFFFF' // 預設白字
+        
+        if (statusText.includes('漲停')) {
+          priceBgColor = '#FF0000'
+        } else if (statusText.includes('跌停')) {
+          priceBgColor = '#008000'
         }
 
         // 整列
@@ -272,27 +229,41 @@ async function sendAggregatedPush(hits) {
             {
               type: 'text',
               text: `${item.code} ${item.name}`,
-              size: 'sm',
-              color: '#111111',
+              size: 'md',
+              color: '#FFFFFF',
               gravity: 'center',
-              flex: 1, // 佔據剩餘空間
+              flex: 1, 
             },
-            // 右側：價格與標籤容器
+            // 右側：價格 (如果有漲跌停，這裡會有背景色)
             {
               type: 'box',
-              layout: 'horizontal',
-              contents: rightContents,
-              flex: 0, // 依內容寬度，確保靠右
-              alignItems: 'center',
-              justifyContent: 'flex-end'
+              layout: 'vertical',
+              backgroundColor: priceBgColor,
+              cornerRadius: 'sm',
+              paddingStart: 'sm',
+              paddingEnd: 'sm',
+              height: '24px',
+              justifyContent: 'center',
+              flex: 0,
+              contents: [
+                {
+                  type: 'text',
+                  text: `${item.price}`,
+                  size: 'sm',
+                  color: priceTextColor,
+                  align: 'center',
+                  weight: 'bold'
+                }
+              ]
             }
           ],
-          paddingTop: 'sm',
-          paddingBottom: 'sm',
+          paddingTop: 'md',
+          paddingBottom: 'md',
+          alignItems: 'center'
         })
         
         // 分隔線
-        contents.push({ type: 'separator' })
+        contents.push({ type: 'separator', color: '#333333' })
       })
     }
   }
@@ -303,6 +274,11 @@ async function sendAggregatedPush(hits) {
     altText: '🔔 股票觸及通知',
     contents: {
       type: 'bubble',
+      styles: {
+        body: {
+          backgroundColor: '#191919' // 深色背景
+        }
+      },
       body: {
         type: 'box',
         layout: 'vertical',
