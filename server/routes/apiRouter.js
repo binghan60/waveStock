@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import express from 'express'
 import RecognizedStock from '../models/RecognizedStock.js'
 import StockHitLog from '../models/StockHitLog.js'
@@ -37,6 +38,153 @@ router.post('/push-message', async (req, res) => {
   }
 })
 
+/**
+ * 核心邏輯 A：檢查股價是否觸及目標，並寫入 Log
+ * @returns {Promise<Array>} 回傳此次檢查觸發的新紀錄列表
+ */
+async function checkAndLogStockHits(stockDataList) {
+  const symbols = stockDataList.map((s) => s.symbol)
+  const stocksInDb = await RecognizedStock.find({ code: { $in: symbols } })
+
+  const startOfToday = new Date()
+  startOfToday.setHours(0, 0, 0, 0)
+
+  const newHits = []
+
+  for (const stockInfo of stockDataList) {
+    if (!stockInfo.high || stockInfo.high === '-' || !stockInfo.low || stockInfo.low === '-') continue
+
+    const code = stockInfo.symbol
+    const currentHigh = parseFloat(stockInfo.high)
+    const currentLow = parseFloat(stockInfo.low)
+
+    const dbStock = stocksInDb.find((s) => s.code === code)
+    if (!dbStock) continue
+
+    // 1. 先收集所有「潛在」觸發項目 (不立即寫入 DB)
+    const potentialHits = []
+
+    const checkCondition = (type, targetValStr, compareVal, compareType) => {
+      if (!targetValStr) return
+      const threshold = parseTargetPrice(targetValStr, type)
+      if (threshold === null) return
+
+      const isHit = compareType === 'gte' ? compareVal >= threshold : compareVal <= threshold
+      if (isHit) {
+        potentialHits.push({ type, threshold, compareVal })
+      }
+    }
+
+    checkCondition('support', dbStock.support, currentLow, 'lte')
+    checkCondition('swap', dbStock.swapRef, currentLow, 'lte')
+    checkCondition('shortTerm', dbStock.shortTermProfit, currentHigh, 'gte')
+    checkCondition('wave', dbStock.waveProfit, currentHigh, 'gte')
+
+    // 2. 過濾邏輯
+    const hasShortTerm = potentialHits.some((h) => h.type === 'shortTerm')
+    const hasWave = potentialHits.some((h) => h.type === 'wave')
+    const hasSupport = potentialHits.some((h) => h.type === 'support')
+    const hasSwap = potentialHits.some((h) => h.type === 'swap')
+
+    let finalHits = potentialHits
+    
+    // 如果同時有 shortTerm 和 wave，只保留 wave
+    if (hasShortTerm && hasWave) {
+      finalHits = finalHits.filter((h) => h.type !== 'shortTerm')
+    }
+    
+    // 如果同時有 support 和 swap，只保留 swap
+    if (hasSupport && hasSwap) {
+      finalHits = finalHits.filter((h) => h.type !== 'support')
+    }
+
+    // 3. 寫入 DB 並準備回傳
+    for (const hit of finalHits) {
+      const existLog = await StockHitLog.findOne({
+        stockId: dbStock._id,
+        type: hit.type,
+        happenedAt: { $gte: startOfToday },
+      })
+
+      if (!existLog) {
+        console.log(`✅ [${code}] ${hit.type} 觸發！現價 ${hit.compareVal} 門檻 ${hit.threshold}`)
+
+        await StockHitLog.create({
+          stockId: dbStock._id,
+          code: dbStock.code,
+          type: hit.type,
+          targetPrice: hit.threshold,
+          triggerPrice: hit.compareVal,
+        })
+
+        newHits.push({
+          type: hit.type,
+          code: dbStock.code,
+          name: stockInfo.name || '',
+          price: hit.compareVal,
+          target: hit.threshold,
+        })
+      }
+    }
+  }
+
+  return newHits
+}
+
+/**
+ * 核心邏輯 B：整合觸發紀錄並發送推播
+ */
+async function sendAggregatedPush(hits) {
+  if (!hits || hits.length === 0) return
+
+  const TARGET_PUSH_ID = 'Cb5fef09fce454530cf37458c468196c0'
+  const TYPE_NAME_MAP = {
+    shortTerm: '💰 短線獲利',
+    wave: '🌊 波段獲利',
+    support: '🛡️ 支撐',
+    swap: '🔄 換股操作',
+  }
+
+  // 分組整理
+  const grouped = {
+    shortTerm: [],
+    wave: [],
+    support: [],
+    swap: [],
+  }
+
+  hits.forEach((hit) => {
+    if (grouped[hit.type]) {
+      grouped[hit.type].push(hit)
+    }
+  })
+
+  // 組合訊息
+  let message = '🔔 觸及通知匯總'
+  let hasContent = false
+
+  // 依序檢查四種類型，有資料才顯示區塊
+  for (const type of ['shortTerm', 'wave', 'support', 'swap']) {
+    const list = grouped[type]
+    if (list.length > 0) {
+      hasContent = true
+      message += `\n\n【${TYPE_NAME_MAP[type]}】\n`
+      list.forEach((item) => {
+        message += `${item.code} ${item.name} (${item.price})\n`
+      })
+    }
+  }
+
+  if (hasContent) {
+    try {
+      await client.pushMessage(TARGET_PUSH_ID, { type: 'text', text: message.trim() })
+      console.log(`📨 已推播整合通知給 ${TARGET_PUSH_ID}，共包含 ${hits.length} 筆紀錄`)
+    } catch (err) {
+      console.error('❌ 推播失敗:', err.message)
+    }
+  }
+}
+
 // 新增：專門用來獲取股價的 API
 router.post('/stock-prices', async (req, res) => {
   try {
@@ -47,6 +195,14 @@ router.post('/stock-prices', async (req, res) => {
     }
 
     const prices = await fetchStockData(symbols)
+
+    // 🔥 在獲取股價的同時，異步執行檢查邏輯 (不阻塞 API 回傳)
+    checkAndLogStockHits(prices)
+      .then((hits) => sendAggregatedPush(hits))
+      .catch((err) => {
+        console.error('❌ 檢查股價狀態失敗:', err)
+      })
+console.log(prices.find(x=>x.symbol == 2313))
     res.json(prices)
   } catch (e) {
     console.error('Fetch Stock Prices Error:', e)
@@ -301,68 +457,19 @@ router.post('/check-stock-status', async (req, res) => {
       return res.json({ success: true, message: '沒有設定目標的股票', results: [] })
     }
 
-    const startOfToday = new Date()
-    startOfToday.setHours(0, 0, 0, 0)
-
-    let newLogCount = 0
     const chunks = chunkArray(stocks, 10)
+    let allHits = []
 
     console.log(`📊 共 ${stocks.length} 支股票，分為 ${chunks.length} 組檢查`)
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]
-      const chunkSymbols = chunk.map(s => s.code)
-      
+      const chunkSymbols = chunk.map((s) => s.code)
+
       try {
         const stockDataList = await fetchStockData(chunkSymbols)
-
-        for (const stockInfo of stockDataList) {
-          if (!stockInfo.high || stockInfo.high === '-' || !stockInfo.low || stockInfo.low === '-') continue
-
-          const code = stockInfo.symbol
-          const currentHigh = parseFloat(stockInfo.high)
-          const currentLow = parseFloat(stockInfo.low)
-
-          const dbStock = stocks.find((s) => s.code === code)
-          if (!dbStock) continue
-
-          // 內部函式：檢查並記錄
-          const checkAndLog = async (type, targetValStr, compareVal, compareType) => {
-            if (!targetValStr) return
-
-            const threshold = parseTargetPrice(targetValStr, type)
-            if (threshold === null) return
-
-            const isHit = compareType === 'gte' ? compareVal >= threshold : compareVal <= threshold
-
-            if (isHit) {
-              const existLog = await StockHitLog.findOne({
-                stockId: dbStock._id,
-                type: type,
-                happenedAt: { $gte: startOfToday },
-              })
-
-              if (!existLog) {
-                console.log(`✅ [${code}] ${type} 觸發！現價 ${compareVal} ${compareType === 'gte' ? '>=' : '<='} 門檻 ${threshold}`)
-
-                await StockHitLog.create({
-                  stockId: dbStock._id,
-                  code: dbStock.code,
-                  type: type,
-                  targetPrice: threshold,
-                  triggerPrice: compareVal,
-                })
-                newLogCount++
-              }
-            }
-          }
-
-          // 執行四項檢查
-          await checkAndLog('support', dbStock.support, currentLow, 'lte')
-          await checkAndLog('swap', dbStock.swapRef, currentLow, 'lte')
-          await checkAndLog('shortTerm', dbStock.shortTermProfit, currentHigh, 'gte')
-          await checkAndLog('wave', dbStock.waveProfit, currentHigh, 'gte')
-        }
+        const chunkHits = await checkAndLogStockHits(stockDataList)
+        allHits = allHits.concat(chunkHits)
       } catch (err) {
         console.error(`❌ 第 ${i + 1} 組查詢失敗:`, err.message)
       }
@@ -370,12 +477,17 @@ router.post('/check-stock-status', async (req, res) => {
       if (i < chunks.length - 1) await new Promise((r) => setTimeout(r, 1000))
     }
 
-    console.log(`🎉 檢查完成！新增 ${newLogCount} 筆觸價紀錄。`)
+    console.log(`🎉 檢查完成！新增 ${allHits.length} 筆觸價紀錄。`)
+
+    // 最後一次性發送整合推播
+    if (allHits.length > 0) {
+      await sendAggregatedPush(allHits)
+    }
 
     res.json({
       success: true,
       message: '檢查完成',
-      newLogCount: newLogCount,
+      newLogCount: allHits.length,
     })
   } catch (error) {
     console.error('❌ 系統錯誤:', error)

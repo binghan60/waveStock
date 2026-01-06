@@ -87,16 +87,31 @@ async function fetchStockDataWithRetry(stockIds, retryCount = 0) {
     const results = msgArray
       .filter((msg) => msg.c && msg.c !== '' && msg.n && msg.n !== '')
       .map((msg) => {
+        const isValid = (val) => val && val !== '-' && !isNaN(parseFloat(val)) && parseFloat(val) > 0
+
         let currentPrice = msg.z
 
-        // 如果成交價為空或 0，嘗試使用買入/賣出價，最後用昨收價
-        if (currentPrice === '-' || !currentPrice || parseFloat(currentPrice) <= 0) {
-          if (msg.b && msg.b !== '-' && parseFloat(msg.b.split('_')[0]) > 0) {
-            currentPrice = msg.b.split('_')[0]
-          } else if (msg.a && msg.a !== '-' && parseFloat(msg.a.split('_')[0]) > 0) {
-            currentPrice = msg.a.split('_')[0]
+        // 如果成交價無效 (e.g. '-' 或 '0.00')
+        if (!isValid(currentPrice)) {
+          // 輔助函式：從 "0.0000_103.5000_..." 字串中找出第一個有效價格
+          const findFirstValidPrice = (rawStr) => {
+            if (!rawStr || rawStr === '-') return null
+            const parts = rawStr.split('_')
+            for (const part of parts) {
+              if (isValid(part)) return part
+            }
+            return null
+          }
+
+          const bidPrice = findFirstValidPrice(msg.b)
+          const askPrice = findFirstValidPrice(msg.a)
+
+          if (bidPrice) {
+            currentPrice = bidPrice
+          } else if (askPrice) {
+            currentPrice = askPrice
           } else {
-            currentPrice = msg.y
+            currentPrice = msg.y // 真的沒有才用昨收
           }
         }
 
