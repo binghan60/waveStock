@@ -210,14 +210,33 @@ async function sendAggregatedPush(hits) {
       list.forEach((item) => {
         const statusText = item.status || ''
         
-        // 決定價格區塊的樣式
-        let priceBgColor = 'transparent' // 預設透明
-        let priceTextColor = '#FFFFFF' // 預設白字
-        
+        // 決定價格區塊的樣式屬性
+        const priceBoxProps = {
+          type: 'box',
+          layout: 'vertical',
+          cornerRadius: 'sm',
+          paddingStart: 'sm',
+          paddingEnd: 'sm',
+          height: '24px',
+          justifyContent: 'center',
+          flex: 0,
+          contents: [
+            {
+              type: 'text',
+              text: String(item.price), // 強制轉字串
+              size: 'sm',
+              color: '#FFFFFF',
+              align: 'center',
+              weight: 'bold'
+            }
+          ]
+        }
+
+        // 只有在漲跌停時才設定背景色
         if (statusText.includes('漲停')) {
-          priceBgColor = '#FF0000'
+          priceBoxProps.backgroundColor = '#FF0000'
         } else if (statusText.includes('跌停')) {
-          priceBgColor = '#008000'
+          priceBoxProps.backgroundColor = '#008000'
         }
 
         // 整列
@@ -234,28 +253,8 @@ async function sendAggregatedPush(hits) {
               gravity: 'center',
               flex: 1, 
             },
-            // 右側：價格 (如果有漲跌停，這裡會有背景色)
-            {
-              type: 'box',
-              layout: 'vertical',
-              backgroundColor: priceBgColor,
-              cornerRadius: 'sm',
-              paddingStart: 'sm',
-              paddingEnd: 'sm',
-              height: '24px',
-              justifyContent: 'center',
-              flex: 0,
-              contents: [
-                {
-                  type: 'text',
-                  text: `${item.price}`,
-                  size: 'sm',
-                  color: priceTextColor,
-                  align: 'center',
-                  weight: 'bold'
-                }
-              ]
-            }
+            // 右側：價格 (動態屬性)
+            priceBoxProps
           ],
           paddingTop: 'md',
           paddingBottom: 'md',
