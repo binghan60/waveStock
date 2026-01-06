@@ -52,11 +52,20 @@ async function checkAndLogStockHits(stockDataList) {
   const newHits = []
 
   for (const stockInfo of stockDataList) {
-    if (!stockInfo.high || stockInfo.high === '-' || !stockInfo.low || stockInfo.low === '-') continue
+    // 取得當前價格 (已經由 stockService 處理過漲跌停邏輯)
+    const price = parseFloat(stockInfo.currentPrice)
+
+    // 如果連現價都沒有，那就真的沒辦法比對了，跳過
+    if (!price || isNaN(price) || price <= 0) continue
 
     const code = stockInfo.symbol
-    const currentHigh = parseFloat(stockInfo.high)
-    const currentLow = parseFloat(stockInfo.low)
+
+    // 處理最高價與最低價：如果 API 回傳無效 (例如漲停鎖死時 h 為 '-')，就用現價遞補
+    let currentHigh = parseFloat(stockInfo.high)
+    let currentLow = parseFloat(stockInfo.low)
+
+    if (isNaN(currentHigh) || currentHigh <= 0) currentHigh = price
+    if (isNaN(currentLow) || currentLow <= 0) currentLow = price
 
     const dbStock = stocksInDb.find((s) => s.code === code)
     if (!dbStock) continue
