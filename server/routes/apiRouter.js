@@ -2,11 +2,40 @@ import express from 'express'
 import RecognizedStock from '../models/RecognizedStock.js'
 import StockHitLog from '../models/StockHitLog.js'
 import { fetchStockData, getSystemStatus } from '../services/stockService.js'
+import * as line from '@line/bot-sdk'
 
 const router = express.Router()
 router.use(express.json())
 
+// LINE Bot Client 初始化
+const lineConfig = {
+  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
+  channelSecret: process.env.CHANNEL_SECRET,
+}
+const client = new line.Client(lineConfig)
+
 // --- API 路由 ---
+
+// 新增：推播訊息 API
+router.post('/push-message', async (req, res) => {
+  try {
+    const { to, message } = req.body
+
+    if (!to || !message) {
+      return res.status(400).json({ error: '缺少 to 或 message 參數' })
+    }
+
+    await client.pushMessage(to, {
+      type: 'text',
+      text: message,
+    })
+
+    res.json({ success: true, message: '推播成功' })
+  } catch (error) {
+    console.error('❌ Push Message Error:', error.message)
+    res.status(500).json({ error: '推播失敗', details: error.message })
+  }
+})
 
 // 新增：專門用來獲取股價的 API
 router.post('/stock-prices', async (req, res) => {

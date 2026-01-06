@@ -12,4 +12,8 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  server: {
+    port: 5188, // 你想要的 port
+    strictPort: true, // 若 port 被佔用就直接失敗
+  },
 })

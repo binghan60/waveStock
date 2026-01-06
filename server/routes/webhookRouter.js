@@ -29,7 +29,18 @@ export default (config) => {
 
 async function handleEvent(event, client) {
   if (event.type === 'message' && event.message.type === 'text') {
-    return client.replyMessage(event.replyToken, { type: 'text', text: event.message.text })
+    if (event.message.text === '取得推播ID') {
+      const source = event.source
+      let replyText = `User ID: ${source.userId}`
+      if (source.groupId) {
+        replyText += `\nGroup ID: ${source.groupId}`
+      }
+      if (source.roomId) {
+        replyText += `\nRoom ID: ${source.roomId}`
+      }
+      return client.replyMessage(event.replyToken, { type: 'text', text: replyText })
+    }
+    // return client.replyMessage(event.replyToken, { type: 'text', text: event.message.text })
   }
 
   if (event.type === 'message' && event.message.type === 'image') {
