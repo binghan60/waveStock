@@ -207,56 +207,92 @@ async function sendAggregatedPush(hits) {
 
       // 列表內容
       list.forEach((item) => {
-        // 處理漲跌停顏色
-        let statusColor = '#666666'
-        let statusText = item.status || ''
-        
-        // 移除括號只取文字，讓顯示更乾淨
+        // 處理漲跌停標籤
+        let statusTag = null
+        const statusText = item.status || ''
+
         if (statusText.includes('漲停')) {
-          statusColor = '#FF0000'
-          statusText = '🔥漲停'
+          statusTag = {
+            type: 'text',
+            text: '漲',
+            size: 'xs',
+            color: '#FFFFFF',
+            weight: 'bold',
+            align: 'center',
+            gravity: 'center'
+          }
         } else if (statusText.includes('跌停')) {
-          statusColor = '#008000'
-          statusText = '💚跌停'
+          statusTag = {
+            type: 'text',
+            text: '跌',
+            size: 'xs',
+            color: '#FFFFFF',
+            weight: 'bold',
+            align: 'center',
+            gravity: 'center'
+          }
         }
 
-        const rowComponents = [
-          {
-            type: 'text',
-            text: `${item.code} ${item.name}`,
-            size: 'sm',
-            color: '#111111',
-            flex: 4,
-          },
-          {
-            type: 'text',
-            text: `${item.price}`,
-            size: 'sm',
-            align: 'end',
-            color: '#111111',
-            flex: 2,
-          }
-        ]
+        // 右側區塊：價格 + (標籤)
+        const rightContents = []
+        
+        // 價格
+        rightContents.push({
+          type: 'text',
+          text: `${item.price}`,
+          size: 'sm',
+          color: '#111111',
+          align: 'end',
+          gravity: 'center',
+          flex: 0 // 不自動伸縮，依內容寬度
+        })
 
-        if (statusText) {
-          rowComponents.push({
-            type: 'text',
-            text: statusText,
-            size: 'xs',
-            color: statusColor,
-            align: 'end',
-            weight: 'bold',
-            flex: 2,
-            margin: 'sm'
+        // 如果有標籤，加一個 Box 包紅/綠底色
+        if (statusTag) {
+          rightContents.push({
+            type: 'box',
+            layout: 'vertical',
+            backgroundColor: statusText.includes('漲停') ? '#FF0000' : '#008000',
+            cornerRadius: 'xs',
+            paddingStart: 'xs',
+            paddingEnd: 'xs',
+            margin: 'sm',
+            height: '20px',
+            justifyContent: 'center',
+            contents: [statusTag]
           })
         }
 
+        // 整列
         contents.push({
           type: 'box',
-          layout: 'baseline',
-          contents: rowComponents,
-          margin: 'sm',
+          layout: 'horizontal',
+          contents: [
+            // 左側：股票名稱代號
+            {
+              type: 'text',
+              text: `${item.code} ${item.name}`,
+              size: 'sm',
+              color: '#111111',
+              gravity: 'center',
+              flex: 1, // 佔據剩餘空間
+            },
+            // 右側：價格與標籤容器
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: rightContents,
+              flex: 0, // 依內容寬度，確保靠右
+              alignItems: 'center',
+              justifyContent: 'flex-end'
+            }
+          ],
+          paddingTop: 'sm',
+          paddingBottom: 'sm',
         })
+        
+        // 分隔線
+        contents.push({ type: 'separator' })
       })
     }
   }
