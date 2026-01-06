@@ -291,9 +291,29 @@ async function sendAggregatedPush(hits) {
     await client.pushMessage(TARGET_PUSH_ID, flexMessage)
     console.log(`📨 已推播 Flex Message 給 ${TARGET_PUSH_ID}，共包含 ${hits.length} 筆紀錄`)
   } catch (err) {
-    console.error('❌ 推播失敗:', err.message)
-    // 如果 Flex 失敗 (可能是格式錯)，fallback 到純文字
-    // 但通常只要結構對就不會錯
+    console.error('❌ Flex Message 推播失敗:', err.message)
+    if (err.originalError && err.originalError.response && err.originalError.response.data) {
+        console.error('詳細錯誤:', JSON.stringify(err.originalError.response.data, null, 2))
+    }
+
+    // Fallback: 轉為純文字推播，確保訊息不漏接
+    let fallbackText = '🔔 觸及通知 (純文字備案)\n'
+    for (const type of ['shortTerm', 'wave', 'support', 'swap']) {
+        const list = grouped[type]
+        if (list.length > 0) {
+            fallbackText += `\n【${TYPE_NAME_MAP[type]}】\n`
+            list.forEach(item => {
+                fallbackText += `${item.code} ${item.name} ${item.price} ${item.status || ''}\n`
+            })
+        }
+    }
+    
+    try {
+        await client.pushMessage(TARGET_PUSH_ID, { type: 'text', text: fallbackText.trim() })
+        console.log('⚠️ 已改用純文字推播')
+    } catch (textErr) {
+        console.error('❌ 純文字推播也失敗:', textErr.message)
+    }
   }
 }
 
