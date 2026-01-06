@@ -70,6 +70,15 @@ async function checkAndLogStockHits(stockDataList) {
     const dbStock = stocksInDb.find((s) => s.code === code)
     if (!dbStock) continue
 
+    // 0. 判斷漲跌停狀態
+    let status = ''
+    const yesterdayClose = parseFloat(stockInfo.yesterdayClose)
+    if (yesterdayClose && yesterdayClose > 0) {
+      const diffPercent = (price - yesterdayClose) / yesterdayClose
+      if (diffPercent >= 0.095) status = '(🔥漲停)'
+      else if (diffPercent <= -0.095) status = '(💚跌停)'
+    }
+
     // 1. 先收集所有「潛在」觸發項目 (不立即寫入 DB)
     const potentialHits = []
 
@@ -132,6 +141,7 @@ async function checkAndLogStockHits(stockDataList) {
           name: stockInfo.name || '',
           price: hit.compareVal,
           target: hit.threshold,
+          status: status, // 加入漲跌停狀態
         })
       }
     }
@@ -179,7 +189,7 @@ async function sendAggregatedPush(hits) {
       hasContent = true
       message += `\n\n【${TYPE_NAME_MAP[type]}】\n`
       list.forEach((item) => {
-        message += `${item.code} ${item.name} (${item.price})\n`
+        message += `${item.code} ${item.name} (${item.price}) ${item.status || ''}\n`
       })
     }
   }
