@@ -345,12 +345,11 @@ router.post('/stock-prices', async (req, res) => {
     const prices = await fetchStockData(symbols)
 
     // 🔥 在獲取股價的同時，異步執行檢查邏輯 (不阻塞 API 回傳)
-    checkAndLogStockHits(prices)
-      .then((hits) => sendAggregatedPush(hits))
-      .catch((err) => {
-        console.error('❌ 檢查股價狀態失敗:', err)
-      })
-console.log(prices.find(x=>x.symbol == 2313))
+    // checkAndLogStockHits(prices)
+    //   .then((hits) => sendAggregatedPush(hits))
+    //   .catch((err) => {
+    //     console.error('❌ 檢查股價狀態失敗:', err)
+    //   })
     res.json(prices)
   } catch (e) {
     console.error('Fetch Stock Prices Error:', e)
