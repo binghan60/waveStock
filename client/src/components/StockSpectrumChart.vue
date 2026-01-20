@@ -161,7 +161,7 @@ const chartData = computed(() => {
       backgroundColor: (ctx) => {
         const val = ctx.raw?.y || 0
         if (isStealth.value) {
-            return val >= 0 ? 'rgba(239, 68, 68, 0.8)' : 'rgba(34, 197, 94, 0.8)'
+            return 'rgba(51, 65, 85, 0.8)' // Slate-700 (Neutral)
         }
         return val >= 0 ? 'rgba(248, 113, 113, 1)' : 'rgba(74, 222, 128, 1)' // Red-400 : Green-400
       },
@@ -224,7 +224,10 @@ const chartOptions = computed(() => {
         ticks: {
             display: true,
             callback: (val) => val + '%',
-            color: (ctx) => ctx.tick.value > 0 ? '#f87171' : (ctx.tick.value < 0 ? '#4ade80' : textColor)
+            color: (ctx) => {
+               if (isStealth.value) return textColor
+               return ctx.tick.value > 0 ? '#f87171' : (ctx.tick.value < 0 ? '#4ade80' : textColor)
+            }
         },
         border: { display: false }
       }

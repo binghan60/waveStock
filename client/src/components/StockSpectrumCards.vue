@@ -118,6 +118,9 @@ const categorizedStocks = computed(() => {
 })
 
 const getPercentClass = (percent) => {
+  if (isStealth.value) {
+     return 'text-slate-700'
+  }
   if (percent > 0) return 'text-red-400'
   if (percent < 0) return 'text-green-400'
   return 'text-zinc-400'
@@ -125,10 +128,10 @@ const getPercentClass = (percent) => {
 
 const getBgClass = (zoneId) => {
   const mapping = {
-    swap: isStealth.value ? 'bg-emerald-50 border-emerald-100' : 'bg-emerald-500/5 border-emerald-500/10',
-    support: isStealth.value ? 'bg-cyan-50 border-cyan-100' : 'bg-cyan-500/5 border-cyan-500/10',
-    shortTerm: isStealth.value ? 'bg-amber-50 border-amber-100' : 'bg-amber-500/5 border-amber-500/10',
-    wave: isStealth.value ? 'bg-rose-50 border-rose-100' : 'bg-rose-500/5 border-rose-500/10'
+    swap: isStealth.value ? 'bg-white border-slate-200 border-t-emerald-500' : 'bg-emerald-500/5 border-emerald-500/10',
+    support: isStealth.value ? 'bg-white border-slate-200 border-t-cyan-500' : 'bg-cyan-500/5 border-cyan-500/10',
+    shortTerm: isStealth.value ? 'bg-white border-slate-200 border-t-amber-500' : 'bg-amber-500/5 border-amber-500/10',
+    wave: isStealth.value ? 'bg-white border-slate-200 border-t-rose-500' : 'bg-rose-500/5 border-rose-500/10'
   }
   return mapping[zoneId]
 }
@@ -138,21 +141,24 @@ const getBgClass = (zoneId) => {
   <div class="mb-4 grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
     <div v-for="zone in zones" :key="zone.id"
       class="flex flex-col rounded-xl border overflow-hidden min-h-[100px] transition-all"
-      :class="[getBgClass(zone.id), isStealth ? 'border shadow-sm' : 'border border-zinc-800']"
+      :class="[
+        getBgClass(zone.id), 
+        isStealth ? 'shadow-sm border-t-4' : 'border border-zinc-800'
+      ]"
     >
       <div class="py-2 px-3 text-xs font-bold uppercase tracking-widest text-center border-b"
-        :class="isStealth ? `text-${zone.color.indicatorClass}-700 bg-${zone.color.indicatorClass}-100 border-${zone.color.indicatorClass}-200` : `${zone.color.textClass} ${zone.color.bgClass} border-zinc-800`"
+        :class="isStealth ? 'text-slate-600 bg-slate-50 border-slate-100' : `${zone.color.textClass} ${zone.color.bgClass} border-zinc-800`"
       >
         {{ zone.label }} ({{ categorizedStocks[zone.id].length }})
       </div>
       <div class="p-2 space-y-1.5">
         <div v-for="stock in categorizedStocks[zone.id]" :key="stock._id"
           class="w-full flex items-center justify-between p-1.5 rounded transition-all gap-2"
-          :class="isStealth ? 'bg-white border border-gray-100' : 'bg-zinc-900/50 border border-zinc-800/50'"
+          :class="isStealth ? 'bg-transparent border-b border-slate-100 rounded-none' : 'bg-zinc-900/50 border border-zinc-800/50'"
         >
           <div class="flex items-center gap-2 min-w-0">
             <span class="font-bold text-sm flex-shrink-0" :class="isStealth ? 'text-slate-700' : 'text-zinc-200'">{{ stock.code }}</span>
-            <span class="text-[11px] opacity-60 truncate font-medium" :class="isStealth ? 'text-slate-600' : 'text-zinc-400'">{{ stock.market?.name }}</span>
+            <span class="text-[11px] opacity-60 truncate font-medium" :class="isStealth ? 'text-slate-500' : 'text-zinc-400'">{{ stock.market?.name }}</span>
           </div>
           <span class="text-sm font-mono font-bold flex-shrink-0" :class="getPercentClass(stock.percent)">{{ stock.percent > 0 ? '+' : '' }}{{ stock.percent.toFixed(1) }}%</span>
         </div>
