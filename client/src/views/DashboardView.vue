@@ -2,6 +2,8 @@
 import { ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import StockSection from '@/components/StockSection.vue'
+import StockSpectrumChart from '@/components/StockSpectrumChart.vue'
+import StockSpectrumCards from '@/components/StockSpectrumCards.vue'
 import { useStockStore } from '@/stores/stockStore'
 
 const stockStore = useStockStore()
@@ -9,8 +11,10 @@ const {
   pinnedStocks, 
   unpinnedManualStocks: unpinnedStocks, 
   unpinnedRecognizedStocks, 
+  processedRecognizedStocks,
   isLoading, 
-  isStealth 
+  isStealth,
+  showSpectrum
 } = storeToRefs(stockStore)
 
 const { 
@@ -18,6 +22,7 @@ const {
   removeStock, 
   removeRecognizedStock, 
   togglePin, 
+  toggleSpectrum,
   triggerBot 
 } = stockStore
 
@@ -42,7 +47,21 @@ const handleRemoveItem = (item) => {
 <template>
   <div>
     <!-- Quick Add Section -->
-    <div class="mb-8 flex justify-end">
+    <div class="mb-8 flex justify-end gap-3 items-center">
+      <!-- Spectrum Toggle -->
+      <button 
+        @click="toggleSpectrum"
+        class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border cursor-pointer"
+        :class="
+          isStealth
+            ? showSpectrum ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-white border-slate-200 text-slate-400'
+            : showSpectrum ? 'bg-blue-600/20 border-blue-500/50 text-blue-400' : 'bg-zinc-900 border-zinc-800 text-zinc-600'
+        "
+      >
+        <span class="text-sm ">{{ showSpectrum ? '📊' : '📈' }}</span>
+        {{ showSpectrum ? '隱藏分布圖' : '顯示分布圖' }}
+      </button>
+
       <div class="flex gap-2">
         <div class="relative w-48 md:w-64">
           <input
@@ -71,6 +90,12 @@ const handleRemoveItem = (item) => {
         </button>
       </div>
     </div>
+
+    <!-- 光譜圖區域 -->
+    <template v-if="!isLoading && processedRecognizedStocks.length > 0">
+      <StockSpectrumChart v-if="showSpectrum" />
+      <StockSpectrumCards />
+    </template>
 
     <!-- 置頂區域 -->
     <StockSection

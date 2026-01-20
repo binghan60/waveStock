@@ -84,6 +84,7 @@ export const useStockStore = defineStore('stock', () => {
   const lastDashboardUpdate = ref(0) // 新增：記錄上次抓取 dashboard 的時間
   const isStealth = ref(false)
   const activeTab = ref('dashboard') // 'dashboard' or 'dataTable'
+  const showSpectrum = ref(true)
 
   // Data Table State
   const searchQuery = ref('')
@@ -106,6 +107,9 @@ export const useStockStore = defineStore('stock', () => {
 
       const savedTab = localStorage.getItem('active-tab')
       if (savedTab) activeTab.value = savedTab
+
+      const savedSpectrum = localStorage.getItem('show-spectrum')
+      showSpectrum.value = savedSpectrum !== '0'
     } catch (e) {
       console.error('Failed to load from localStorage', e)
     }
@@ -128,6 +132,11 @@ export const useStockStore = defineStore('stock', () => {
   const toggleStealth = () => {
     isStealth.value = !isStealth.value
     localStorage.setItem('stealth-mode', isStealth.value ? '1' : '0')
+  }
+
+  const toggleSpectrum = () => {
+    showSpectrum.value = !showSpectrum.value
+    localStorage.setItem('show-spectrum', showSpectrum.value ? '1' : '0')
   }
 
   // --- Actions: Core Business ---
@@ -242,7 +251,7 @@ export const useStockStore = defineStore('stock', () => {
       saveManualStocks()
       await fetchData()
       toast.success('已加入監控清單')
-    } catch (e) {
+    } catch {
       toast.error('新增失敗')
     } finally {
       isLoading.value = false
@@ -264,7 +273,7 @@ export const useStockStore = defineStore('stock', () => {
       await api.deleteRecognizedStock(id)
       rawRecognizedStocks.value = rawRecognizedStocks.value.filter((s) => s._id !== id)
       toast.success('已刪除辨識記錄')
-    } catch (e) {
+    } catch {
       toast.error('刪除失敗')
     }
   }
@@ -277,7 +286,7 @@ export const useStockStore = defineStore('stock', () => {
       await fetchData()
       toast.success('價格更新成功')
       return true
-    } catch (e) {
+    } catch {
       toast.error('更新價格失敗')
       return false
     }
@@ -288,7 +297,7 @@ export const useStockStore = defineStore('stock', () => {
       await api.triggerBot()
       await fetchData()
       toast.success('Bot 觸發成功')
-    } catch (e) {
+    } catch {
       toast.warning('Bot trigger 功能暫時不可用')
     }
   }
@@ -390,6 +399,7 @@ export const useStockStore = defineStore('stock', () => {
     lastUpdated,
     isStealth,
     activeTab,
+    showSpectrum,
     searchQuery,
     sortConfig,
     startAutoRefresh,
@@ -401,6 +411,7 @@ export const useStockStore = defineStore('stock', () => {
     updateRecognizedPrice,
     togglePin,
     toggleStealth,
+    toggleSpectrum,
     triggerBot,
     setSearchQuery,
     toggleSort,

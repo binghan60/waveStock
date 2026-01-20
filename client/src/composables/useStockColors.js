@@ -1,5 +1,3 @@
-import { computed } from 'vue'
-
 export const INDICATOR_COLORS = {
   swap: {
     label: '換股',

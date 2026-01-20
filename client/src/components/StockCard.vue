@@ -1,5 +1,5 @@
 <script setup>
-import { computed, toRef } from 'vue'
+import { computed, toRef, ref } from 'vue'
 import { useStockFormatter } from '@/composables/useStockFormatter'
 import { useStockDetails } from '@/composables/useStockDetails'
 import { useStockColors } from '@/composables/useStockColors'
@@ -191,31 +191,6 @@ const formatAnalysisPrice = (val) => {
   return val || '無資料'
 }
 
-const getHitTypeName = (type) => {
-  const names = {
-    shortTerm: '短線',
-    wave: '波段',
-    support: '支撐',
-    swap: '換股',
-  }
-  return names[type] || type
-}
-
-const getHitTypeClass = (type, isStealth) => {
-  const mapping = {
-    shortTerm: INDICATOR_COLORS.shortTerm,
-    wave: INDICATOR_COLORS.wave,
-    support: INDICATOR_COLORS.support,
-    swap: INDICATOR_COLORS.swap,
-  }
-  const config = mapping[type]
-  if (!config) return isStealth ? 'bg-slate-200 text-slate-600' : 'bg-zinc-700 text-zinc-300'
-  
-  return isStealth 
-    ? `bg-${config.indicatorClass}-100 text-${config.indicatorClass}-700`
-    : `${config.bgClass} ${config.textClass}`
-}
-
 const isToday = (dateStr) => {
   const d = new Date(dateStr)
   const today = new Date()
@@ -223,6 +198,37 @@ const isToday = (dateStr) => {
          d.getMonth() === today.getMonth() &&
          d.getFullYear() === today.getFullYear()
 }
+
+// Get hits for a specific indicator type
+const getIndicatorHits = (indicatorLabel) => {
+  if (!props.item.hitHistory || props.item.hitHistory.length === 0) return []
+  
+  // Map indicator labels to hit types
+  const typeMap = {
+    '換股': 'swap',
+    '支撐': 'support', 
+    '短線': 'shortTerm',
+    '波段': 'wave'
+  }
+  
+  const hitType = typeMap[indicatorLabel]
+  if (!hitType) return []
+  
+  return props.item.hitHistory.filter(hit => hit.type === hitType)
+}
+
+const getLatestHit = (indicatorLabel) => {
+  const hits = getIndicatorHits(indicatorLabel)
+  return hits.length > 0 ? hits[0] : null
+}
+
+const hasMoreHits = (indicatorLabel) => {
+  const hits = getIndicatorHits(indicatorLabel)
+  return hits.length > 1
+}
+
+const showHistoryForIndicator = ref({})
+const hoverHistoryForIndicator = ref({})
 </script>
 
 <template>
@@ -401,6 +407,7 @@ const isToday = (dateStr) => {
       </div>
 
       <div class="grid grid-cols-2 gap-2 mt-3">
+        <!-- Regular Indicators with Hit History -->
         <div
           v-for="conf in [
             INDICATOR_COLORS.swap,
@@ -409,7 +416,10 @@ const isToday = (dateStr) => {
             INDICATOR_COLORS.wave,
           ].filter(c => item[c.key])"
           :key="conf.key"
-          class="relative flex flex-col p-2 rounded-xl border transition-all duration-500"
+          @click="() => { if (hasMoreHits(conf.label)) showHistoryForIndicator[conf.label] = !showHistoryForIndicator[conf.label] }"
+          @mouseenter="() => { if (hasMoreHits(conf.label)) hoverHistoryForIndicator[conf.label] = true }"
+          @mouseleave="() => { if (hasMoreHits(conf.label)) hoverHistoryForIndicator[conf.label] = false }"
+          class="relative flex flex-col p-2 rounded-xl border transition-all duration-500 min-h-22 max-h-56"
           :class="[
             isStealth ? 'bg-gray-50 border-gray-100' : 'bg-white/5 border-transparent',
             priceInRange.matchedIndicators.includes(conf.label)
@@ -419,28 +429,37 @@ const isToday = (dateStr) => {
                   isStealth ? 'bg-gray-200 text-slate-900 font-bold' : conf.textClass,
                 ]
               : '',
+            hasMoreHits(conf.label) ? 'cursor-pointer group' : ''
           ]"
         >
           <div class="flex justify-between items-start mb-1">
-            <span class="text-[10px] uppercase font-bold tracking-wider opacity-50">
+            <span class="text-[10px] uppercase font-bold tracking-wider opacity-50 flex items-center gap-1">
               {{ conf.label }}
+              <span v-if="getIndicatorHits(conf.label).length > 0" class="text-[8px] opacity-70">
+                ({{ getIndicatorHits(conf.label).length }})
+              </span>
             </span>
-            <span
-              v-if="priceChart"
-              class="text-[10px] font-mono font-bold"
-              :class="[isStealth ? 'text-slate-500' : conf.textClass]"
-            >
-              <template v-if="priceChart.find((p) => p.label === conf.label)">
-                {{
-                  priceChart.find((p) => p.label === conf.label).diff === 0
-                    ? 'HIT'
-                    : (priceChart.find((p) => p.label === conf.label).diffPercent >= 0 ? '+' : '') +
-                      priceChart.find((p) => p.label === conf.label).diffPercent +
-                      '%'
-                }}
-              </template>
-              <template v-else>-</template>
-            </span>
+            <div class="flex items-center gap-1">
+              <span
+                v-if="priceChart"
+                class="text-[10px] font-mono font-bold"
+                :class="[isStealth ? 'text-slate-500' : conf.textClass]"
+              >
+                <template v-if="priceChart.find((p) => p.label === conf.label)">
+                  {{
+                    priceChart.find((p) => p.label === conf.label).diff === 0
+                      ? 'HIT'
+                      : (priceChart.find((p) => p.label === conf.label).diffPercent >= 0 ? '+' : '') +
+                        priceChart.find((p) => p.label === conf.label).diffPercent +
+                        '%'
+                  }}
+                </template>
+                <template v-else>-</template>
+              </span>
+              <span v-if="hasMoreHits(conf.label)" class="text-[9px] opacity-50 group-hover:opacity-100 transition-opacity ml-1">
+                {{ showHistoryForIndicator[conf.label] ? '▼' : '▲' }}
+              </span>
+            </div>
           </div>
           <div
             class="text-sm font-mono font-black"
@@ -448,44 +467,53 @@ const isToday = (dateStr) => {
           >
             {{ formatAnalysisPrice(item[conf.key]) }}
           </div>
-        </div>
-      </div>
 
-      <!-- Hit History -->
-      <div v-if="item.hitHistory && item.hitHistory.length > 0" class="mt-2 pt-2 border-t" :class="isStealth ? 'border-gray-200' : 'border-zinc-800'">
-        <div class="flex justify-between items-center mb-1.5">
-          <h4 class="text-[10px] font-bold opacity-50 uppercase tracking-wider">觸及歷史</h4>
-          <span v-if="item.hitHistory.length > 3" class="text-[9px] opacity-30 font-mono">SCROLL</span>
-        </div>
-        <div class="max-h-18 overflow-y-auto pr-1 custom-scrollbar">
-          <ul class="space-y-1 text-xs">
-            <li v-for="hit in item.hitHistory.slice(0, 10)" :key="hit._id" 
-              class="flex justify-between items-center transition-all py-0.5 px-1 rounded"
-              :class="[
-                isToday(hit.happenedAt) 
-                  ? (isStealth ? 'bg-blue-50/50 ring-1 ring-blue-100' : 'bg-white/10 ring-1 ring-white/10 shadow-sm')
-                  : 'opacity-70 hover:opacity-100'
-              ]"
-            >
-              <div class="flex items-center gap-1.5">
+          <!-- Latest Hit Info -->
+          <div v-if="getLatestHit(conf.label)" class="mt-2 pt-2 border-t" :class="isStealth ? 'border-gray-200' : 'border-zinc-700'">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1">
                 <span class="relative flex h-1.5 w-1.5">
-                  <template v-if="isToday(hit.happenedAt)">
+                  <template v-if="isToday(getLatestHit(conf.label).happenedAt)">
                     <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                     <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
                   </template>
                 </span>
-                <span class="font-bold px-1.5 py-0.5 rounded text-[9px] tracking-tight" :class="getHitTypeClass(hit.type, isStealth)">
-                  {{ getHitTypeName(hit.type) }}
+                <span class="text-[9px] font-mono font-bold" :class="isStealth ? 'text-slate-900' : 'text-white'">
+                  {{ getLatestHit(conf.label).triggerPrice.toFixed(2) }}
                 </span>
               </div>
-              <span class="font-mono font-bold" :class="isStealth ? 'text-slate-900' : 'text-white'">
-                {{ hit.triggerPrice.toFixed(2) }}
+              <span class="text-[9px] font-mono" :class="isToday(getLatestHit(conf.label).happenedAt) ? 'text-red-400 font-bold' : 'opacity-50'">
+                {{ isToday(getLatestHit(conf.label).happenedAt) ? 'TODAY' : new Date(getLatestHit(conf.label).happenedAt).toLocaleDateString('en-CA').slice(5) }}
               </span>
-              <span class="font-mono text-[10px]" :class="isToday(hit.happenedAt) ? 'text-red-400 font-bold' : 'opacity-40'">
-                {{ isToday(hit.happenedAt) ? 'TODAY' : new Date(hit.happenedAt).toLocaleDateString('en-CA').slice(5) }}
-              </span>
-            </li>
-          </ul>
+            </div>
+          </div>
+
+          <!-- Expanded Hit History -->
+          <transition
+            enter-active-class="transition-all duration-300 ease-out"
+            leave-active-class="transition-all duration-200 ease-in"
+            enter-from-class="opacity-0 max-h-0"
+            enter-to-class="opacity-100 max-h-40"
+            leave-from-class="opacity-100 max-h-40"
+            leave-to-class="opacity-0 max-h-0"
+          >
+            <div v-if="(showHistoryForIndicator[conf.label] || hoverHistoryForIndicator[conf.label]) && hasMoreHits(conf.label)" class="mt-2 pt-2 border-t overflow-hidden" :class="isStealth ? 'border-gray-200' : 'border-zinc-700'">
+              <div class="max-h-32 overflow-y-auto pr-1 custom-scrollbar">
+                <ul class="space-y-1">
+                  <li v-for="hit in getIndicatorHits(conf.label).slice(1, 10)" :key="hit._id" 
+                    class="flex justify-between items-center text-[10px] py-0.5 px-1 rounded opacity-70 hover:opacity-100 transition-all"
+                  >
+                    <span class="font-mono font-bold" :class="isStealth ? 'text-slate-900' : 'text-white'">
+                      {{ hit.triggerPrice.toFixed(2) }}
+                    </span>
+                    <span class="font-mono opacity-50">
+                      {{ new Date(hit.happenedAt).toLocaleDateString('en-CA').slice(5) }}
+                    </span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </transition>
         </div>
       </div>
 
