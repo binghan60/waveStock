@@ -367,14 +367,10 @@ router.get('/system-status', (req, res) => {
 
 router.get('/dashboard', async (req, res) => {
   try {
-    // 1. 取得圖片辨識的股票 (MongoDB) - 只取 30 天內的
-    const thirtyDaysAgo = new Date()
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-    const recognizedStocks = await RecognizedStock.find({
-      createdAt: { $gte: thirtyDaysAgo },
-    })
+    // 1. 取得圖片辨識的股票 (MongoDB) - 移除 30 天限制，顯示全部
+    const recognizedStocks = await RecognizedStock.find({})
       .sort({ createdAt: -1 })
-      .limit(100)
+      .limit(200) // 增加限制到 200 避免過多，但移除日期限制
 
     // 2. 獲取所有相關的觸及歷史紀錄
     const stockIds = recognizedStocks.map((s) => s._id)
@@ -436,18 +432,12 @@ router.get('/dashboard', async (req, res) => {
 
 // ==================== 辨識股票相關 API ====================
 
-// 📋 取得所有辨識過的股票（只顯示 30 天內的）
+// 📋 取得所有辨識過的股票（移除 30 天限制）
 router.get('/recognized-stocks', async (req, res) => {
   try {
-    const { source, isFavorite, limit = 100 } = req.query
+    const { source, isFavorite, limit = 200 } = req.query
 
-    // 計算 30 天前的日期
-    const thirtyDaysAgo = new Date()
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-
-    const query = {
-      createdAt: { $gte: thirtyDaysAgo }, // 只取 30 天內的
-    }
+    const query = {}
     if (source) query.source = source
     if (isFavorite !== undefined) query.isFavorite = isFavorite === 'true'
 

@@ -45,22 +45,6 @@ const isLimitHit = computed(() => {
   return details.value.rawAbsPercent >= 9.5
 })
 
-const daysLeft = computed(() => {
-  const dateStr = props.item.updatedAt || props.item.createdAt
-  const trackingDate = new Date(dateStr)
-
-  if (isNaN(trackingDate.getTime())) return 0
-
-  const now = new Date()
-  const expiryDate = new Date(trackingDate)
-  expiryDate.setDate(expiryDate.getDate() + 30)
-
-  const diffTime = expiryDate - now
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-
-  return Math.max(0, diffDays)
-})
-
 const priceInRange = computed(() => {
   if (!props.item.market) return { inRange: false, matchedIndicators: [] }
 
@@ -529,9 +513,6 @@ const hoverHistoryForIndicator = ref({})
             minute: '2-digit',
           })
         }}</span>
-        <span class="text-[10px] opacity-70">
-          {{ isStealth ? 'Exp' : '追蹤' }}: {{ daysLeft }} {{ isStealth ? 'D' : '天' }}
-        </span>
       </div>
   </div>
 </template>
