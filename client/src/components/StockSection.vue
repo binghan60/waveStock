@@ -28,7 +28,7 @@ defineProps({
   }
 })
 
-defineEmits(['remove', 'togglePin'])
+defineEmits(['remove', 'togglePin', 'switchVersion', 'hideStock'])
 </script>
 
 <template>
@@ -76,6 +76,8 @@ defineEmits(['remove', 'togglePin'])
         :allow-delete="allowDelete && item.listType !== 'recognized'"
         @remove="$emit('remove', item)"
         @togglePin="$emit('togglePin', $event)"
+        @switchVersion="$emit('switchVersion', $event)"
+        @hideStock="$emit('hideStock', $event)"
       />
     </div>
   </section>

@@ -1,10 +1,11 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useStockFormatter } from '@/composables/useStockFormatter'
 import { useStockStore } from '@/stores/stockStore'
 import { useStockColors } from '@/composables/useStockColors'
 import PriceEditModal from '@/components/PriceEditModal.vue'
+import { BarChart2, X, Pin, PinOff, Pencil, ArrowUp, ArrowDown, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight } from 'lucide-vue-next'
 
 const { formatPrice: formatStockPrice } = useStockFormatter()
 const stockStore = useStockStore()
@@ -25,6 +26,21 @@ const {
   setSearchQuery,
   toggleSort
 } = stockStore
+
+// --- 分頁 ---
+const PAGE_SIZE = 20
+const currentPage = ref(1)
+const totalPages = computed(() => Math.ceil(recognizedStocks.value.length / PAGE_SIZE))
+const pagedStocks = computed(() => {
+  const start = (currentPage.value - 1) * PAGE_SIZE
+  return recognizedStocks.value.slice(start, start + PAGE_SIZE)
+})
+const goToPage = (p) => {
+  currentPage.value = Math.max(1, Math.min(p, totalPages.value))
+}
+// 搜尋或排序後重置到第一頁
+import { watch } from 'vue'
+watch([() => recognizedStocks.value.length, searchQuery], () => { currentPage.value = 1 })
 
 // --- Modal 狀態 ---
 const isPriceModalVisible = ref(false)
@@ -55,7 +71,8 @@ const handleSavePrice = async (newPrice) => {
       <div>
         <div class="flex items-center gap-3 mb-2">
           <h2 class="text-2xl font-bold tracking-tight">
-            {{ isStealth ? 'RECOGNITION_RECORDS' : '📊 圖片辨識戰果榜' }}
+            <BarChart2 v-if="!isStealth" class="inline w-5 h-5 mr-1 align-text-bottom text-blue-400" />
+            {{ isStealth ? 'RECOGNITION_RECORDS' : '圖片辨識戰果榜' }}
           </h2>
           <span
             class="px-3 py-1 rounded-full text-xs font-mono font-bold"
@@ -86,7 +103,7 @@ const handleSavePrice = async (newPrice) => {
               : 'bg-zinc-900 border-zinc-700 text-white focus:border-blue-500'
           "
         />
-        <span v-if="searchQuery" @click="setSearchQuery('')" class="absolute right-3 top-2.5 text-xs cursor-pointer opacity-50 hover:opacity-100">✕</span>
+        <button v-if="searchQuery" @click="setSearchQuery('')" class="absolute right-3 top-2.5 cursor-pointer opacity-50 hover:opacity-100"><X class="w-3.5 h-3.5" /></button>
       </div>
     </div>
 
@@ -96,7 +113,7 @@ const handleSavePrice = async (newPrice) => {
       class="py-20 text-center border-2 border-dashed rounded-2xl transition-colors"
       :class="isStealth ? 'border-slate-200 text-slate-400' : 'border-zinc-800 text-zinc-600'"
     >
-      <div class="text-6xl mb-4 opacity-20">📊</div>
+      <div class="mb-4 opacity-20 flex justify-center"><BarChart2 class="w-16 h-16" /></div>
       <h3 class="text-lg font-bold mb-2">無符合資料</h3>
       <p class="text-sm opacity-60">
         {{ searchQuery ? '嘗試使用其他關鍵字搜尋' : '上傳股票圖片後，資料將顯示在此處' }}
@@ -126,7 +143,7 @@ const handleSavePrice = async (newPrice) => {
               class="px-4 py-4 text-left font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
             >
               股票代號
-              <span v-if="sortConfig.key === 'code'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+              <span v-if="sortConfig.key === 'code'" class="ml-1 text-blue-500"><ArrowUp v-if="sortConfig.order === 'asc'" class="w-3 h-3 inline ml-0.5" /><ArrowDown v-else class="w-3 h-3 inline ml-0.5" /></span>
             </th>
 
             <th 
@@ -134,7 +151,7 @@ const handleSavePrice = async (newPrice) => {
               class="px-4 py-4 text-right font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
             >
               新增時股價
-              <span v-if="sortConfig.key === 'initialPrice'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+              <span v-if="sortConfig.key === 'initialPrice'" class="ml-1 text-blue-500"><ArrowUp v-if="sortConfig.order === 'asc'" class="w-3 h-3 inline ml-0.5" /><ArrowDown v-else class="w-3 h-3 inline ml-0.5" /></span>
             </th>
 
             <th 
@@ -142,7 +159,7 @@ const handleSavePrice = async (newPrice) => {
               class="px-4 py-4 text-right font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
             >
               目前股價
-              <span v-if="sortConfig.key === 'currentPrice'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+              <span v-if="sortConfig.key === 'currentPrice'" class="ml-1 text-blue-500"><ArrowUp v-if="sortConfig.order === 'asc'" class="w-3 h-3 inline ml-0.5" /><ArrowDown v-else class="w-3 h-3 inline ml-0.5" /></span>
             </th>
 
             <th 
@@ -150,7 +167,7 @@ const handleSavePrice = async (newPrice) => {
               class="px-4 py-4 text-right font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
             >
               換股價
-              <span v-if="sortConfig.key === 'swapRef'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+              <span v-if="sortConfig.key === 'swapRef'" class="ml-1 text-blue-500"><ArrowUp v-if="sortConfig.order === 'asc'" class="w-3 h-3 inline ml-0.5" /><ArrowDown v-else class="w-3 h-3 inline ml-0.5" /></span>
             </th>
 
             <th 
@@ -158,7 +175,7 @@ const handleSavePrice = async (newPrice) => {
               class="px-4 py-4 text-right font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
             >
               支撐區間
-              <span v-if="sortConfig.key === 'support'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+              <span v-if="sortConfig.key === 'support'" class="ml-1 text-blue-500"><ArrowUp v-if="sortConfig.order === 'asc'" class="w-3 h-3 inline ml-0.5" /><ArrowDown v-else class="w-3 h-3 inline ml-0.5" /></span>
             </th>
 
             <th 
@@ -166,7 +183,7 @@ const handleSavePrice = async (newPrice) => {
               class="px-4 py-4 text-right font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
             >
               短線目標
-              <span v-if="sortConfig.key === 'shortTermProfit'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+              <span v-if="sortConfig.key === 'shortTermProfit'" class="ml-1 text-blue-500"><ArrowUp v-if="sortConfig.order === 'asc'" class="w-3 h-3 inline ml-0.5" /><ArrowDown v-else class="w-3 h-3 inline ml-0.5" /></span>
             </th>
 
             <th 
@@ -174,7 +191,7 @@ const handleSavePrice = async (newPrice) => {
               class="px-4 py-4 text-right font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
             >
               波段目標
-              <span v-if="sortConfig.key === 'waveProfit'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+              <span v-if="sortConfig.key === 'waveProfit'" class="ml-1 text-blue-500"><ArrowUp v-if="sortConfig.order === 'asc'" class="w-3 h-3 inline ml-0.5" /><ArrowDown v-else class="w-3 h-3 inline ml-0.5" /></span>
             </th>
 
             <th 
@@ -182,7 +199,7 @@ const handleSavePrice = async (newPrice) => {
               class="px-4 py-4 text-center font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
             >
               狀態
-              <span v-if="sortConfig.key === 'isSuccess'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+              <span v-if="sortConfig.key === 'isSuccess'" class="ml-1 text-blue-500"><ArrowUp v-if="sortConfig.order === 'asc'" class="w-3 h-3 inline ml-0.5" /><ArrowDown v-else class="w-3 h-3 inline ml-0.5" /></span>
             </th>
 
             <th 
@@ -190,13 +207,13 @@ const handleSavePrice = async (newPrice) => {
               class="px-4 py-4 text-left font-bold tracking-wide cursor-pointer hover:opacity-80 select-none"
             >
               傳入時間
-              <span v-if="sortConfig.key === 'updatedAt'" class="ml-1 text-blue-500">{{ sortConfig.order === 'asc' ? '▲' : '▼' }}</span>
+              <span v-if="sortConfig.key === 'updatedAt'" class="ml-1 text-blue-500"><ArrowUp v-if="sortConfig.order === 'asc'" class="w-3 h-3 inline ml-0.5" /><ArrowDown v-else class="w-3 h-3 inline ml-0.5" /></span>
             </th>
           </tr>
         </thead>
         <tbody>
           <tr
-            v-for="(stock, index) in recognizedStocks"
+            v-for="(stock, index) in pagedStocks"
             :key="stock._id"
             class="border-b transition-colors hover:bg-opacity-50"
             :class="[
@@ -209,7 +226,7 @@ const handleSavePrice = async (newPrice) => {
           >
             <!-- 序號 -->
             <td class="px-4 py-4 font-mono text-xs opacity-50">
-              {{ index + 1 }}
+              {{ (currentPage - 1) * PAGE_SIZE + index + 1 }}
             </td>
 
             <!-- 股票代號 -->
@@ -219,7 +236,8 @@ const handleSavePrice = async (newPrice) => {
                   @click="togglePin(stock.code)"
                   class="opacity-40 hover:opacity-100 transition-opacity"
                 >
-                  {{ pinnedList.includes(stock.code) ? '📌' : '📍' }}
+                  <Pin v-if="pinnedList.includes(stock.code)" class="w-4 h-4 text-yellow-500" />
+                  <PinOff v-else class="w-4 h-4 text-zinc-400" />
                 </button>
                 <span
                   class="font-black text-lg tracking-tight"
@@ -241,7 +259,7 @@ const handleSavePrice = async (newPrice) => {
                   {{ formatStockPrice(stock.currentPrice) }}
                 </span>
                 <span v-else class="text-xs opacity-40">-</span>
-                <button @click="editInitialPrice(stock)" class="opacity-20 hover:opacity-100 text-xs">✎</button>
+                <button @click="editInitialPrice(stock)" class="opacity-30 hover:opacity-100 text-blue-400 transition-opacity"><Pencil class="w-3 h-3" /></button>
               </div>
             </td>
 
@@ -295,25 +313,10 @@ const handleSavePrice = async (newPrice) => {
                   {{
                     parseFloat(stock.market.currentPrice) >
                     parseFloat(stock.market.yesterdayClose)
-                      ? '▲ ' +
-                        (
-                          ((parseFloat(stock.market.currentPrice) -
-                            parseFloat(stock.market.yesterdayClose)) /
-                            parseFloat(stock.market.yesterdayClose)) *
-                          100
-                        ).toFixed(2) +
-                        '%'
-                      : parseFloat(stock.market.currentPrice) <
-                          parseFloat(stock.market.yesterdayClose)
-                        ? '▼ ' +
-                          (
-                            ((parseFloat(stock.market.yesterdayClose) -
-                              parseFloat(stock.market.currentPrice)) /
-                              parseFloat(stock.market.yesterdayClose)) *
-                            100
-                          ).toFixed(2) +
-                          '%'
-                        : '— 0.00%'
+                      ? '+' + (((parseFloat(stock.market.currentPrice) - parseFloat(stock.market.yesterdayClose)) / parseFloat(stock.market.yesterdayClose)) * 100).toFixed(2) + '%'
+                      : parseFloat(stock.market.currentPrice) < parseFloat(stock.market.yesterdayClose)
+                        ? '-' + (((parseFloat(stock.market.yesterdayClose) - parseFloat(stock.market.currentPrice)) / parseFloat(stock.market.yesterdayClose)) * 100).toFixed(2) + '%'
+                        : '0.00%'
                   }}
                 </span>
               </div>
@@ -430,6 +433,49 @@ const handleSavePrice = async (newPrice) => {
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- 分頁控制 -->
+    <div v-if="totalPages > 1" class="flex items-center justify-between mt-4 mb-2 px-1">
+      <span class="text-xs opacity-40 font-mono">
+        {{ (currentPage - 1) * PAGE_SIZE + 1 }}–{{ Math.min(currentPage * PAGE_SIZE, recognizedStocks.length) }} / {{ recognizedStocks.length }}
+      </span>
+      <div class="flex items-center gap-1">
+        <button
+          @click="goToPage(1)" :disabled="currentPage === 1"
+          class="px-2 py-1 rounded text-xs transition-all disabled:opacity-20"
+          :class="isStealth ? 'hover:bg-slate-100 text-slate-600' : 'hover:bg-zinc-800 text-zinc-400'"
+        ><ChevronsLeft class="w-3.5 h-3.5" /></button>
+        <button
+          @click="goToPage(currentPage - 1)" :disabled="currentPage === 1"
+          class="px-2 py-1 rounded text-xs transition-all disabled:opacity-20"
+          :class="isStealth ? 'hover:bg-slate-100 text-slate-600' : 'hover:bg-zinc-800 text-zinc-400'"
+        ><ChevronLeft class="w-3.5 h-3.5" /></button>
+        <template v-for="p in totalPages" :key="p">
+          <button
+            v-if="p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1"
+            @click="goToPage(p)"
+            class="w-7 h-7 rounded text-xs font-bold transition-all"
+            :class="p === currentPage
+              ? isStealth ? 'bg-slate-700 text-white' : 'bg-zinc-600 text-white'
+              : isStealth ? 'hover:bg-slate-100 text-slate-500' : 'hover:bg-zinc-800 text-zinc-500'"
+          >{{ p }}</button>
+          <span
+            v-else-if="p === 2 && currentPage > 3 || p === totalPages - 1 && currentPage < totalPages - 2"
+            class="px-1 opacity-30 text-xs"
+          >…</span>
+        </template>
+        <button
+          @click="goToPage(currentPage + 1)" :disabled="currentPage === totalPages"
+          class="px-2 py-1 rounded text-xs transition-all disabled:opacity-20"
+          :class="isStealth ? 'hover:bg-slate-100 text-slate-600' : 'hover:bg-zinc-800 text-zinc-400'"
+        ><ChevronRight class="w-3.5 h-3.5" /></button>
+        <button
+          @click="goToPage(totalPages)" :disabled="currentPage === totalPages"
+          class="px-2 py-1 rounded text-xs transition-all disabled:opacity-20"
+          :class="isStealth ? 'hover:bg-slate-100 text-slate-600' : 'hover:bg-zinc-800 text-zinc-400'"
+        ><ChevronsRight class="w-3.5 h-3.5" /></button>
+      </div>
     </div>
 
     <!-- 統計資訊 -->

@@ -1,5 +1,7 @@
 <script setup>
 import { computed } from 'vue'
+
+const emit = defineEmits(['cardClick'])
 import {
   Chart as ChartJS,
   LinearScale,
@@ -27,8 +29,19 @@ ChartJS.register(
   datalabelsPlugin
 )
 
+const props = defineProps({
+  filterMode: { type: String, default: 'all' } // 'all' | '1m' | '3m'
+})
+
 const stockStore = useStockStore()
 const { processedRecognizedStocks, isStealth } = storeToRefs(stockStore)
+
+const filteredStocks = computed(() => {
+  if (props.filterMode === 'all') return processedRecognizedStocks.value
+  const now = Date.now()
+  const cutoff = props.filterMode === '1m' ? 30 * 24 * 60 * 60 * 1000 : 90 * 24 * 60 * 60 * 1000
+  return processedRecognizedStocks.value.filter(s => s.createdAt && (now - new Date(s.createdAt).getTime()) <= cutoff)
+})
 
 // --- Logic to Calculate Strategic Position (X-Axis) ---
 const getStrategicScore = (stock) => {
@@ -142,7 +155,7 @@ const getDailyChange = (stock) => {
 
 // --- Chart Data ---
 const chartData = computed(() => {
-  const points = processedRecognizedStocks.value.map(stock => {
+  const points = filteredStocks.value.map(stock => {
     const x = getStrategicScore(stock)
     if (x === null) return null
     return {
@@ -187,6 +200,16 @@ const chartOptions = computed(() => {
   return {
     responsive: true,
     maintainAspectRatio: false,
+    onHover: (event, activeElements) => {
+      event.native.target.style.cursor = activeElements.length > 0 ? 'pointer' : 'default'
+    },
+    onClick: (event, activeElements) => {
+      if (activeElements.length > 0) {
+        const index = activeElements[0].index
+        const code = chartData.value.datasets[0].data[index]?.label
+        if (code) emit('cardClick', code)
+      }
+    },
     layout: {
         padding: { top: 50, bottom: 20, left: 10, right: 30 }
     },

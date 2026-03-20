@@ -1,12 +1,24 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { ChevronDown, ChevronUp } from 'lucide-vue-next'
 import { useStockStore } from '@/stores/stockStore'
 import { storeToRefs } from 'pinia'
 import { useStockColors } from '@/composables/useStockColors'
 
+const props = defineProps({
+  filterMode: { type: String, default: 'all' } // 'all' | '1m' | '3m'
+})
+
 const stockStore = useStockStore()
 const { processedRecognizedStocks, isStealth } = storeToRefs(stockStore)
 const { INDICATOR_COLORS } = useStockColors()
+
+const filteredStocks = computed(() => {
+  if (props.filterMode === 'all') return processedRecognizedStocks.value
+  const now = Date.now()
+  const cutoff = props.filterMode === '1m' ? 30 * 24 * 60 * 60 * 1000 : 90 * 24 * 60 * 60 * 1000
+  return processedRecognizedStocks.value.filter(s => s.createdAt && (now - new Date(s.createdAt).getTime()) <= cutoff)
+})
 
 // Define the 4 Zones
 const zones = [
@@ -74,7 +86,7 @@ const getStrategicScore = (stock) => {
 
 const categorizedStocks = computed(() => {
   const result = { swap: [], support: [], shortTerm: [], wave: [] }
-  const sourceList = processedRecognizedStocks.value
+  const sourceList = filteredStocks.value
 
   sourceList.forEach(stock => {
     const score = getStrategicScore(stock)
@@ -126,6 +138,12 @@ const getPercentClass = (percent) => {
   return 'text-zinc-400'
 }
 
+const isCollapsed = ref(localStorage.getItem('spectrum-cards-collapsed') === '1')
+const toggleCollapsed = () => {
+  isCollapsed.value = !isCollapsed.value
+  localStorage.setItem('spectrum-cards-collapsed', isCollapsed.value ? '1' : '0')
+}
+
 const getBgClass = (zoneId) => {
   const mapping = {
     swap: isStealth.value ? 'bg-white border-slate-200 border-t-emerald-500' : 'bg-emerald-500/5 border-emerald-500/10',
@@ -138,7 +156,30 @@ const getBgClass = (zoneId) => {
 </script>
 
 <template>
-  <div class="mb-4 grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
+  <div class="mb-4">
+    <!-- 收合標題列 -->
+    <button
+      @click="toggleCollapsed"
+      class="flex items-center gap-2 mb-2 w-full text-left px-1 py-1 rounded-lg group transition-colors"
+      :class="isStealth ? 'hover:bg-slate-100' : 'hover:bg-zinc-800/50'"
+    >
+      <span class="text-[10px] font-bold uppercase tracking-widest"
+        :class="isStealth ? 'text-slate-500' : 'text-zinc-400'">
+        區間分布
+      </span>
+      <span class="flex-1 h-px" :class="isStealth ? 'bg-slate-200' : 'bg-zinc-800'" />
+      <span class="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all"
+        :class="isStealth
+          ? 'bg-white border-slate-200 text-slate-500 group-hover:border-slate-400'
+          : 'bg-zinc-800 border-zinc-700 text-zinc-400 group-hover:border-zinc-500 group-hover:text-zinc-300'"
+      >
+        <ChevronUp v-if="!isCollapsed" class="w-3 h-3" />
+        <ChevronDown v-else class="w-3 h-3" />
+        {{ isCollapsed ? '展開' : '收合' }}
+      </span>
+    </button>
+
+  <div v-show="!isCollapsed" class="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
     <div v-for="zone in zones" :key="zone.id"
       class="flex flex-col rounded-xl border overflow-hidden min-h-[100px] transition-all"
       :class="[
@@ -164,5 +205,6 @@ const getBgClass = (zoneId) => {
         </div>
       </div>
     </div>
+  </div>
   </div>
 </template>

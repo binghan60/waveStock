@@ -3,6 +3,7 @@ import { computed, toRef, ref } from 'vue'
 import { useStockFormatter } from '@/composables/useStockFormatter'
 import { useStockDetails } from '@/composables/useStockDetails'
 import { useStockColors } from '@/composables/useStockColors'
+import { Pin, PinOff, X, ArrowUp, ArrowDown, ChevronUp, ChevronDown } from 'lucide-vue-next'
 
 const { formatPrice, formatNumber } = useStockFormatter()
 const { INDICATOR_COLORS } = useStockColors()
@@ -16,6 +17,8 @@ const props = defineProps({
     default: true
   }
 })
+
+const emit = defineEmits(['remove', 'togglePin', 'switchVersion', 'hideStock'])
 
 // 使用 Composable 計算股票詳情 (價差、漲跌幅、顏色)
 const { details } = useStockDetails(toRef(props, 'item'), toRef(props, 'isStealth'))
@@ -217,6 +220,7 @@ const hoverHistoryForIndicator = ref({})
 
 <template>
   <div
+    :id="'stock-card-' + displaySymbol"
     class="group relative rounded-xl p-4 border transition-all duration-300"
     :class="[
       isStealth
@@ -243,6 +247,20 @@ const hoverHistoryForIndicator = ref({})
         >
           {{ displaySymbol }}
         </span>
+        <div v-if="item.hasMultipleVersions" class="flex rounded overflow-hidden border text-[10px] font-bold" :class="isStealth ? 'border-indigo-200' : 'border-indigo-500/30'">
+          <button
+            v-for="v in item.versions"
+            :key="v._id"
+            @click.stop="$emit('switchVersion', item.code)"
+            :title="`${new Date(v.createdAt).toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' })}`"
+            class="px-1.5 py-0.5 transition-all"
+            :class="v._id === item._id
+              ? isStealth ? 'bg-indigo-500 text-white' : 'bg-indigo-500 text-white'
+              : isStealth ? 'bg-indigo-50 text-indigo-400 hover:bg-indigo-100' : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20'"
+          >
+            v{{ item.versions.indexOf(v) + 1 }}
+          </button>
+        </div>
         <!-- 置頂按鈕 -->
         <button
           @click="$emit('togglePin', displaySymbol)"
@@ -252,28 +270,29 @@ const hoverHistoryForIndicator = ref({})
               ? isStealth
                 ? 'text-yellow-600 hover:text-yellow-700 scale-125'
                 : 'text-yellow-400 hover:text-yellow-300 scale-125'
-              : 'opacity-30 hover:opacity-100 ' +
+              : 'opacity-60 hover:opacity-100 ' +
                 (isStealth
-                  ? 'text-gray-400 hover:text-yellow-600'
-                  : 'text-gray-600 hover:text-yellow-400')
+                  ? 'text-slate-400 hover:text-yellow-600'
+                  : 'text-zinc-400 hover:text-yellow-400')
           "
           :title="item.isPinned ? '取消置頂' : '置頂'"
         >
-          {{ item.isPinned ? '📌' : '📍' }}
+          <Pin v-if="item.isPinned" class="w-4 h-4" />
+          <PinOff v-else class="w-4 h-4" />
         </button>
         <span v-if="item.market" class="text-xs opacity-50">
            {{ item.market.name }}
         </span>
       </div>
 
-      <!-- 刪除按鈕 (For simple cards, it was separate. For recognized, it was optional. Keeping it here) -->
-       <button
-          v-if="allowDelete"
-          @click="$emit('remove', item.id || item._id)"
-          class="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:text-red-400"
-        >
-          ✕
-        </button>
+      <!-- 刪除按鈕 -->
+      <button
+        v-if="allowDelete"
+        @click="$emit('remove', item.id || item._id)"
+        class="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-zinc-500 hover:text-red-400"
+      >
+        <X class="w-3.5 h-3.5" />
+      </button>
     </div>
 
     <!-- Market Data -->
@@ -294,7 +313,8 @@ const hoverHistoryForIndicator = ref({})
         </div>
         <div class="flex flex-col text-xs font-medium mb-1" :class="details.colorClass">
           <span class="flex items-center">
-            {{ details.isUp ? '▲' : details.isDown ? '▼' : '' }}
+            <ArrowUp v-if="details.isUp" class="w-3 h-3 inline" />
+            <ArrowDown v-else-if="details.isDown" class="w-3 h-3 inline" />
             {{ details.diff }}
           </span>
           <span class="opacity-80">{{ details.percent }}%</span>
@@ -441,7 +461,8 @@ const hoverHistoryForIndicator = ref({})
                 <template v-else>-</template>
               </span>
               <span v-if="hasMoreHits(conf.label)" class="text-[9px] opacity-50 group-hover:opacity-100 transition-opacity ml-1">
-                {{ showHistoryForIndicator[conf.label] ? '▼' : '▲' }}
+                <ChevronDown v-if="showHistoryForIndicator[conf.label]" class="w-3 h-3 opacity-60" />
+              <ChevronUp v-else class="w-3 h-3 opacity-60" />
               </span>
             </div>
           </div>

@@ -30,14 +30,10 @@ const sortStocksWithLimitPriority = (stocks) => {
     return status.isUp ? 2 : 1 // 漲停=2, 跌停=1, 其他=0
   }
 
-  return [...stocks].sort((a, b) => {
-    const sortValA = getSortValue(a)
-    const sortValB = getSortValue(b)
-    if (sortValA !== sortValB) {
-      return sortValB - sortValA
-    }
-    return new Date(b.createdAt || b.updatedAt) - new Date(a.createdAt || a.updatedAt)
-  })
+  return stocks
+    .map((s, i) => ({ s, i, v: getSortValue(s) }))
+    .sort((a, b) => b.v - a.v || a.i - b.i) // 同優先級保持原始順序
+    .map(({ s }) => s)
 }
 
 // --- Smart Refresh Helpers ---
@@ -79,6 +75,7 @@ export const useStockStore = defineStore('stock', () => {
   const marketPrices = ref({})
 
   const pinnedList = ref([])
+  const hiddenStocks = ref([]) // array of symbol/code strings
   const isLoading = ref(false)
   const lastUpdated = ref('')
   const lastDashboardUpdate = ref(0) // 新增：記錄上次抓取 dashboard 的時間
@@ -110,6 +107,9 @@ export const useStockStore = defineStore('stock', () => {
 
       const savedSpectrum = localStorage.getItem('show-spectrum')
       showSpectrum.value = savedSpectrum !== '0'
+
+      const hidden = localStorage.getItem('hidden-stocks')
+      hiddenStocks.value = hidden ? JSON.parse(hidden) : []
     } catch (e) {
       console.error('Failed to load from localStorage', e)
     }
@@ -117,6 +117,10 @@ export const useStockStore = defineStore('stock', () => {
 
   const savePinnedList = () => {
     localStorage.setItem('pinned-stocks', JSON.stringify(pinnedList.value))
+  }
+
+  const saveHiddenStocks = () => {
+    localStorage.setItem('hidden-stocks', JSON.stringify(hiddenStocks.value))
   }
 
   const saveManualStocks = () => {
@@ -137,6 +141,16 @@ export const useStockStore = defineStore('stock', () => {
   const toggleSpectrum = () => {
     showSpectrum.value = !showSpectrum.value
     localStorage.setItem('show-spectrum', showSpectrum.value ? '1' : '0')
+  }
+
+  const toggleHideStock = (symbol) => {
+    const idx = hiddenStocks.value.indexOf(symbol)
+    if (idx > -1) {
+      hiddenStocks.value.splice(idx, 1)
+    } else {
+      hiddenStocks.value.push(symbol)
+    }
+    saveHiddenStocks()
   }
 
   // --- Actions: Core Business ---
@@ -304,27 +318,107 @@ export const useStockStore = defineStore('stock', () => {
 
   // --- Getters ---
   const mergedManualStocks = computed(() => {
-    return rawManualStocks.value.map(stock => ({
-      ...stock,
-      market: marketPrices.value[stock.symbol] || null,
-      isPinned: pinnedList.value.includes(stock.symbol),
-      listType: 'manual'
-    }))
+    return rawManualStocks.value
+      .filter(stock => !hiddenStocks.value.includes(stock.symbol))
+      .map(stock => ({
+        ...stock,
+        market: marketPrices.value[stock.symbol] || null,
+        isPinned: pinnedList.value.includes(stock.symbol),
+        listType: 'manual'
+      }))
   })
 
   const mergedRecognizedStocks = computed(() => {
     return rawRecognizedStocks.value.map(stock => ({
       ...stock,
-      symbol: stock.code, 
+      symbol: stock.code,
       market: marketPrices.value[stock.code] || null,
       isPinned: pinnedList.value.includes(stock.code),
-      listType: 'recognized'
+      listType: 'recognized',
     }))
+  })
+
+  // 版本切換狀態：code → 目前顯示的 _id
+  const activeVersionsByCode = ref({})
+
+  const switchVersion = (code) => {
+    const versions = mergedRecognizedStocks.value
+      .filter(s => s.code === code)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) // 最新 = index 0
+    if (versions.length <= 1) return
+    const currentId = activeVersionsByCode.value[code] || versions[0]._id
+    const currentIdx = versions.findIndex(s => s._id === currentId)
+    const nextIdx = (currentIdx + 1) % versions.length
+    activeVersionsByCode.value[code] = versions[nextIdx]._id
+  }
+
+  // 被隱藏股票的詳細資訊（供 UI 顯示隱藏清單）
+  const hiddenStockDetails = computed(() => {
+    return hiddenStocks.value.map(symbol => {
+      const market = marketPrices.value[symbol]
+      return { symbol, name: market?.name || symbol }
+    })
+  })
+
+  // 所有股票（含已隱藏），供顯示管理面板用
+  const allStocksForManagement = computed(() => {
+    // recognized：先 deduplicate（不過濾hidden），加 isHidden
+    const grouped = {}
+    mergedRecognizedStocks.value.forEach(stock => {
+      if (!grouped[stock.code]) grouped[stock.code] = []
+      grouped[stock.code].push(stock)
+    })
+    const recognized = Object.values(grouped).map(versions => {
+      const sorted = [...versions].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      const active = sorted[sorted.length - 1]
+      return {
+        symbol: active.code,
+        name: marketPrices.value[active.code]?.name || active.code,
+        listType: 'recognized',
+        isHidden: hiddenStocks.value.includes(active.code),
+        createdAt: active.createdAt,
+      }
+    })
+    // manual
+    const manual = rawManualStocks.value.map(stock => ({
+      symbol: stock.symbol,
+      name: marketPrices.value[stock.symbol]?.name || stock.symbol,
+      listType: 'manual',
+      isHidden: hiddenStocks.value.includes(stock.symbol),
+      createdAt: stock.createdAt,
+    }))
+    return [...recognized, ...manual].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+  })
+
+  // 每個 code 只保留一筆（預設最新），並附帶版本資訊
+  const deduplicatedRecognizedStocks = computed(() => {
+    const grouped = {}
+    mergedRecognizedStocks.value
+      .filter(stock => !hiddenStocks.value.includes(stock.code))
+      .forEach(stock => {
+        if (!grouped[stock.code]) grouped[stock.code] = []
+        grouped[stock.code].push(stock)
+      })
+    return Object.values(grouped).map(versions => {
+      // 舊 → 新排序，v1 = 最舊
+      const sorted = [...versions].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      const activeId = activeVersionsByCode.value[sorted[0].code]
+      const active = (activeId && sorted.find(s => s._id === activeId)) || sorted[sorted.length - 1]
+      const versionIdx = sorted.findIndex(s => s._id === active._id) // 0-based
+      return {
+        ...active,
+        createdAt: sorted[sorted.length - 1].createdAt, // 固定用最新版本的日期，避免切版本時排序跳動
+        versions: sorted,
+        hasMultipleVersions: sorted.length > 1,
+        versionLabel: sorted.length > 1 ? `v${versionIdx + 1}` : null,
+        totalVersions: sorted.length,
+      }
+    })
   })
 
   const pinnedStocks = computed(() => {
     const pManual = mergedManualStocks.value.filter(s => s.isPinned)
-    const pRecognized = mergedRecognizedStocks.value.filter(s => s.isPinned)
+    const pRecognized = deduplicatedRecognizedStocks.value.filter(s => s.isPinned)
     return sortStocksWithLimitPriority([...pManual, ...pRecognized])
   })
 
@@ -333,12 +427,12 @@ export const useStockStore = defineStore('stock', () => {
   })
 
   const unpinnedRecognizedStocks = computed(() => {
-    const unpinned = mergedRecognizedStocks.value.filter((s) => !s.isPinned)
+    const unpinned = deduplicatedRecognizedStocks.value.filter((s) => !s.isPinned)
     return sortStocksWithLimitPriority(unpinned)
   })
 
   const processedRecognizedStocks = computed(() => {
-    let result = mergedRecognizedStocks.value
+    let result = deduplicatedRecognizedStocks.value
     if (searchQuery.value) {
       const q = searchQuery.value.toLowerCase()
       result = result.filter(
@@ -416,6 +510,12 @@ export const useStockStore = defineStore('stock', () => {
     setSearchQuery,
     toggleSort,
     setActiveTab,
+    switchVersion,
+    hiddenStocks,
+    hiddenStockDetails,
+    allStocksForManagement,
+    toggleHideStock,
+    isTracking: (symbol) => rawManualStocks.value.some(s => s.symbol === symbol.trim().toUpperCase()),
     pinnedStocks,
     unpinnedManualStocks,
     unpinnedRecognizedStocks,

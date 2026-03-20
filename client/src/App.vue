@@ -3,6 +3,7 @@ import { onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import ConfirmModal from './components/ConfirmModal.vue'
 import { useStockStore } from '@/stores/stockStore'
+import { Zap, Building2 } from 'lucide-vue-next'
 
 const stockStore = useStockStore()
 const { 
@@ -10,9 +11,8 @@ const {
   isStealth,
 } = storeToRefs(stockStore)
 
-const { 
-  toggleStealth, 
-  triggerBot,
+const {
+  toggleStealth,
   startAutoRefresh,
   stopAutoRefresh,
 } = stockStore
@@ -39,15 +39,9 @@ onUnmounted(() => {
       >
         <div class="flex items-center gap-4">
           <h1 class="text-2xl font-black tracking-tight italic">
-            {{ isStealth ? 'Core_System_Report' : '🚀 2026 財富自由戰情室' }}
+            <Zap v-if="!isStealth" class="inline w-5 h-5 mr-1 text-blue-400 align-middle" />
+            {{ isStealth ? 'Core_System_Report' : '2026 財富自由戰情室' }}
           </h1>
-          <button
-            v-if="!isStealth"
-            @click="triggerBot"
-            class="px-2 py-1 rounded text-[10px] border border-zinc-700 text-zinc-500 hover:border-blue-500 hover:text-blue-400 transition-all uppercase tracking-tighter"
-          >
-            Run Bot Test
-          </button>
         </div>
 
         <div class="flex items-center gap-6">
@@ -65,14 +59,16 @@ onUnmounted(() => {
 
           <button
             @click="toggleStealth"
-            class="px-5 py-2 rounded-full text-xs font-bold border transition-all hover:scale-105 active:scale-95 shadow-sm"
+            class="inline-flex items-center gap-1.5 px-5 py-2 rounded-full text-xs font-bold border transition-all hover:scale-105 active:scale-95 shadow-sm"
             :class="
               isStealth
                 ? 'border-slate-300 text-slate-500 bg-white hover:bg-slate-100'
                 : 'border-zinc-700 text-zinc-400 hover:border-blue-500 hover:text-blue-400 bg-zinc-900/50'
             "
           >
-            {{ isStealth ? '🏢 OFFICE MODE' : '🚀 TRADER MODE' }}
+            <Building2 v-if="isStealth" class="w-3.5 h-3.5 text-slate-400" />
+            <Zap v-else class="w-3.5 h-3.5 text-blue-400" />
+            {{ isStealth ? 'OFFICE MODE' : 'TRADER MODE' }}
           </button>
         </div>
       </header>
