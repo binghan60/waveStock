@@ -60,7 +60,13 @@ const filterBySearch = (list) => {
 
 const applyFilters = (list) => filterBySearch(filterByDate(list))
 
-const filteredStocksForManagement = computed(() => filterByDate(allStocksForManagement.value))
+const filteredStocksForManagement = computed(() => {
+  const cutoff = getDateCutoff()
+  return allStocksForManagement.value.map(s => ({
+    ...s,
+    isDateFiltered: cutoff ? !(s.createdAt && new Date(s.createdAt).getTime() >= cutoff) : false
+  }))
+})
 const filteredPinnedStocks = computed(() => applyFilters(pinnedStocks.value))
 const filteredUnpinnedRecognizedStocks = computed(() => applyFilters(unpinnedRecognizedStocks.value))
 const filteredUnpinnedStocks = computed(() => applyFilters(unpinnedStocks.value))
@@ -250,7 +256,7 @@ const scrollToCard = (code) => {
             {{ f.label }}
           </button>
           <span class="ml-auto text-[10px] opacity-30 font-mono"
-            >{{ filteredStocksForManagement.length }} 筆</span
+            >{{ filteredStocksForManagement.filter(s => !s.isDateFiltered).length }} / {{ filteredStocksForManagement.length }} 筆</span
           >
         </div>
 
@@ -275,18 +281,19 @@ const scrollToCard = (code) => {
               <button
                 v-for="s in filteredStocksForManagement.filter((s) => s.listType === 'recognized')"
                 :key="s.symbol"
-                @click="toggleHideStock(s.symbol)"
-                :title="s.isHidden ? '點擊顯示' : '點擊隱藏'"
-                class="py-1.5 px-1 rounded-lg border text-center transition-all active:scale-95 flex flex-col items-center gap-0.5"
-                :class="
-                  s.isHidden
+                @click="!s.isDateFiltered || s.isHidden ? toggleHideStock(s.symbol) : null"
+                :title="s.isDateFiltered && !s.isHidden ? '不在篩選時間範圍內' : s.isHidden ? '點擊顯示' : '點擊隱藏'"
+                class="py-1.5 px-1 rounded-lg border text-center transition-all flex flex-col items-center gap-0.5"
+                :class="[
+                  s.isHidden || s.isDateFiltered
                     ? isStealth
                       ? 'bg-white border-slate-200 text-slate-300 line-through'
                       : 'bg-zinc-800 border-zinc-700 text-zinc-600 line-through'
                     : isStealth
-                      ? 'bg-white border-green-300 text-slate-700 hover:border-green-500'
-                      : 'bg-zinc-800 border-green-500/40 text-zinc-200 hover:border-green-400'
-                "
+                      ? 'bg-white border-green-300 text-slate-700 hover:border-green-500 active:scale-95'
+                      : 'bg-zinc-800 border-green-500/40 text-zinc-200 hover:border-green-400 active:scale-95',
+                  s.isDateFiltered && !s.isHidden ? 'cursor-default' : 'cursor-pointer'
+                ]"
               >
                 <span class="text-xs font-mono font-bold leading-none">{{ s.symbol }}</span>
                 <span v-if="s.name && s.name !== s.symbol" class="text-[9px] opacity-60 leading-none truncate w-full text-center">{{ s.name }}</span>
@@ -312,18 +319,19 @@ const scrollToCard = (code) => {
               <button
                 v-for="s in filteredStocksForManagement.filter((s) => s.listType === 'manual')"
                 :key="s.symbol"
-                @click="toggleHideStock(s.symbol)"
-                :title="s.isHidden ? '點擊顯示' : '點擊隱藏'"
-                class="py-1.5 px-1 rounded-lg border text-center transition-all active:scale-95 flex flex-col items-center gap-0.5"
-                :class="
-                  s.isHidden
+                @click="!s.isDateFiltered || s.isHidden ? toggleHideStock(s.symbol) : null"
+                :title="s.isDateFiltered && !s.isHidden ? '不在篩選時間範圍內' : s.isHidden ? '點擊顯示' : '點擊隱藏'"
+                class="py-1.5 px-1 rounded-lg border text-center transition-all flex flex-col items-center gap-0.5"
+                :class="[
+                  s.isHidden || s.isDateFiltered
                     ? isStealth
                       ? 'bg-white border-slate-200 text-slate-300 line-through'
                       : 'bg-zinc-800 border-zinc-700 text-zinc-600 line-through'
                     : isStealth
-                      ? 'bg-white border-blue-300 text-slate-700 hover:border-blue-500'
-                      : 'bg-zinc-800 border-blue-500/40 text-zinc-200 hover:border-blue-400'
-                "
+                      ? 'bg-white border-blue-300 text-slate-700 hover:border-blue-500 active:scale-95'
+                      : 'bg-zinc-800 border-blue-500/40 text-zinc-200 hover:border-blue-400 active:scale-95',
+                  s.isDateFiltered && !s.isHidden ? 'cursor-default' : 'cursor-pointer'
+                ]"
               >
                 <span class="text-xs font-mono font-bold leading-none">{{ s.symbol }}</span>
                 <span v-if="s.name && s.name !== s.symbol" class="text-[9px] opacity-60 leading-none truncate w-full text-center">{{ s.name }}</span>
@@ -331,13 +339,6 @@ const scrollToCard = (code) => {
             </div>
           </div>
 
-          <!-- 篩選後無結果 -->
-          <div
-            v-if="filteredStocksForManagement.length === 0"
-            class="text-center py-4 text-xs opacity-30"
-          >
-            此時間範圍內無股票
-          </div>
         </div>
       </div>
     </transition>
