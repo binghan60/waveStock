@@ -98,6 +98,17 @@ onUnmounted(() => {
           >
             戰果榜
           </router-link>
+          <router-link
+            to="/backtest"
+            class="px-6 py-3 text-sm font-bold tracking-wider uppercase transition-all whitespace-nowrap border-b-2"
+            :class="[
+              $route.path.startsWith('/backtest')
+                ? (isStealth ? 'text-blue-600 border-blue-600' : 'text-blue-400 border-blue-400')
+                : (isStealth ? 'text-slate-500 border-transparent hover:bg-slate-100' : 'text-zinc-500 border-transparent hover:bg-zinc-800/50'),
+            ]"
+          >
+            回測專區
+          </router-link>
         </div>
       </div>
 

@@ -6,6 +6,8 @@ import webhookRoutes from './routes/webhookRouter.js'
 import 'dotenv/config'
 import mongoose from 'mongoose'
 
+import dns from "node:dns/promises";
+dns.setServers(["1.1.1.1"]);
 const app = express()
 const PORT = 5001
 

@@ -3,6 +3,7 @@ import express from 'express'
 import RecognizedStock from '../models/RecognizedStock.js'
 import StockHitLog from '../models/StockHitLog.js'
 import { fetchStockData, getSystemStatus } from '../services/stockService.js'
+import { getBacktestChart, getBacktestSummary, getBacktestTrades, getBacktestAll } from '../services/backtestService.js'
 import * as line from '@line/bot-sdk'
 
 const router = express.Router()
@@ -363,6 +364,42 @@ router.get('/system-status', (req, res) => {
     ...getSystemStatus(),
     timestamp: new Date().toISOString(),
   })
+})
+
+router.get('/backtest/summary', (req, res) => {
+  try {
+    res.json(getBacktestSummary(req.query))
+  } catch (error) {
+    console.error('Backtest Summary Error:', error)
+    res.status(500).json({ error: 'Backtest summary failed', details: error.message })
+  }
+})
+
+router.get('/backtest/trades', (req, res) => {
+  try {
+    res.json(getBacktestTrades(req.query))
+  } catch (error) {
+    console.error('Backtest Trades Error:', error)
+    res.status(500).json({ error: 'Backtest trades failed', details: error.message })
+  }
+})
+
+router.get('/backtest/chart', (req, res) => {
+  try {
+    res.json(getBacktestChart(req.query))
+  } catch (error) {
+    console.error('Backtest Chart Error:', error)
+    res.status(500).json({ error: 'Backtest chart failed', details: error.message })
+  }
+})
+
+router.get('/backtest/all', (req, res) => {
+  try {
+    res.json(getBacktestAll(req.query))
+  } catch (error) {
+    console.error('Backtest All Error:', error)
+    res.status(500).json({ error: 'Backtest all failed', details: error.message })
+  }
 })
 
 router.get('/dashboard', async (req, res) => {

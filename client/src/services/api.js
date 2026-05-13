@@ -42,4 +42,24 @@ export default {
   updateRecognizedStock(id, data) {
     return apiClient.patch(`/recognized-stocks/${id}`, data)
   },
+
+  // 回測摘要
+  getBacktestSummary(params) {
+    return apiClient.get('/backtest/summary', { params })
+  },
+
+  // 回測明細
+  getBacktestTrades(params) {
+    return apiClient.get('/backtest/trades', { params })
+  },
+
+  // 回測圖表資料
+  getBacktestChart(params) {
+    return apiClient.get('/backtest/chart', { params })
+  },
+
+  // 取得完整回測資料 (包含摘要、明細與圖表)
+  getBacktestAll(params) {
+    return apiClient.get('/backtest/all', { params })
+  },
 }

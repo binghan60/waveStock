@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import DashboardView from '../views/DashboardView.vue'
 import ResultsView from '../views/ResultsView.vue'
+import BacktestView from '../views/BacktestView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -18,6 +19,11 @@ const router = createRouter({
       path: '/results',
       name: 'results',
       component: ResultsView
+    },
+    {
+      path: '/backtest',
+      name: 'backtest',
+      component: BacktestView
     }
   ],
 })
