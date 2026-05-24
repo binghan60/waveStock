@@ -15,18 +15,31 @@ import {
 } from 'lucide-vue-next'
 import {
   BarElement,
+  BarController,
   CategoryScale,
   Chart as ChartJS,
   LinearScale,
+  LineController,
   LineElement,
   PointElement,
+  ScatterController,
   Tooltip,
 } from 'chart.js'
 import { Bar, Scatter } from 'vue-chartjs'
 import { useStockStore } from '@/stores/stockStore'
 import { useBacktestStore } from '@/stores/backtestStore'
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip)
+ChartJS.register(
+  BarController,
+  ScatterController,
+  LineController,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  PointElement,
+  LineElement,
+  Tooltip,
+)
 
 const stockStore = useStockStore()
 const { isStealth } = storeToRefs(stockStore)

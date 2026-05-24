@@ -7,6 +7,7 @@ import {
   LinearScale,
   PointElement,
   LineElement,
+  ScatterController,
   Tooltip,
   Legend,
   Title
@@ -19,6 +20,7 @@ import { storeToRefs } from 'pinia'
 
 // Register ChartJS components
 ChartJS.register(
+  ScatterController,
   LinearScale,
   PointElement,
   LineElement,
