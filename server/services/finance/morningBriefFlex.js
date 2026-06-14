@@ -72,7 +72,7 @@ export function buildMorningBriefFlex(quotes, generatedAt = new Date()) {
 
   return {
     type: 'flex',
-    altText: `台股盤前 ${formatTaipeiTime(generatedAt)}`,
+    altText: buildAltText(futures[0], generatedAt),
     contents: {
       type: 'bubble',
       size: 'giga',
@@ -85,6 +85,16 @@ export function buildMorningBriefFlex(quotes, generatedAt = new Date()) {
       },
     },
   }
+}
+
+function buildAltText(futuresQuote, generatedAt) {
+  if (!futuresQuote) return `台股盤前 ${formatTaipeiTime(generatedAt)}`
+
+  const arrow =
+    futuresQuote.change > 0 ? '▲' : futuresQuote.change < 0 ? '▼' : '－'
+  return `夜盤 ${arrow}${formatNumber(Math.abs(futuresQuote.change))}點 ${arrow}${formatNumber(
+    Math.abs(futuresQuote.changePercent),
+  )}%`
 }
 
 export function getMarketMood(quotes) {

@@ -46,10 +46,28 @@ test('builds a compact dark LINE Flex message', () => {
   const serialized = JSON.stringify(message)
 
   assert.equal(message.contents.size, 'giga')
+  assert.equal(message.altText, '夜盤 ▲487點 ▲1.1%')
   assert.equal(message.contents.body.backgroundColor, '#0B1220')
   assert.match(serialized, /51,202\.26/)
   assert.match(serialized, /▲353\.46 \(0\.7%\)/)
   assert.match(serialized, /06\/12 夜盤/)
   assert.doesNotMatch(serialized, /202606|延遲行情|非投資建議/)
   assert.equal(getMarketMood(quotes).label, '盤勢偏多')
+})
+
+test('uses a down arrow in alt text when night session falls', () => {
+  const message = buildMorningBriefFlex([
+    {
+      symbol: 'TX',
+      name: '台指期',
+      market: '台指期夜盤',
+      price: 44000,
+      change: -353.51,
+      changePercent: -0.7,
+      tradingDate: '2026-06-15',
+      sessionDate: '2026-06-12',
+    },
+  ])
+
+  assert.equal(message.altText, '夜盤 ▼353.51點 ▼0.7%')
 })
