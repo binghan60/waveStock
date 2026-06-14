@@ -3,6 +3,7 @@ import cors from 'cors'
 import * as line from '@line/bot-sdk'
 import apiRoutes from './routes/apiRouter.js'
 import webhookRoutes from './routes/webhookRouter.js'
+import financeRoutes from './routes/financeRouter.js'
 import 'dotenv/config'
 import mongoose from 'mongoose'
 
@@ -31,4 +32,5 @@ const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.CHANNEL_SECRET,
 }
+app.use('/api/finance', financeRoutes(config))
 app.use('/webhook', line.middleware(config), webhookRoutes(config))

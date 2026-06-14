@@ -21,6 +21,12 @@ const client = new line.Client(lineConfig)
 // 新增：推播訊息 API
 router.post('/push-message', async (req, res) => {
   try {
+    const expectedSecret = process.env.CRON_SECRET
+    const providedSecret = (req.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    if (!expectedSecret || providedSecret !== expectedSecret) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
     const { to, message } = req.body
 
     if (!to || !message) {
@@ -174,7 +180,7 @@ async function checkAndLogStockHits(stockDataList) {
 async function sendAggregatedPush(hits) {
   if (!hits || hits.length === 0) return
 
-  const TARGET_PUSH_ID = 'Cb5fef09fce454530cf37458c468196c0'
+  const TARGET_PUSH_ID = process.env.TARGET_PUSH_ID
   const TYPE_NAME_MAP = {
     shortTerm: '💰 短線獲利',
     wave: '🌊 波段獲利',

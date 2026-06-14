@@ -6,6 +6,8 @@ import FormData from 'form-data'
 import sharp from 'sharp' // 記得要留著 sharp 用來壓縮
 import RecognizedStock from '../models/RecognizedStock.js'
 import { fetchStockData } from '../services/stockService.js'
+import { fetchMorningMarketData } from '../services/finance/marketDataService.js'
+import { buildMorningBriefFlex } from '../services/finance/morningBriefFlex.js'
 
 const OCR_API_KEY = process.env.OCR_API_KEY
 
@@ -29,6 +31,17 @@ export default (config) => {
 
 async function handleEvent(event, client) {
   if (event.type === 'message' && event.message.type === 'text') {
+    if (['盤前早報', '盤前快報'].includes(event.message.text.trim())) {
+      const { quotes } = await fetchMorningMarketData()
+      if (!quotes.length) {
+        return client.replyMessage(event.replyToken, {
+          type: 'text',
+          text: '目前無法取得盤前行情，請稍後再試。',
+        })
+      }
+      return client.replyMessage(event.replyToken, buildMorningBriefFlex(quotes))
+    }
+
     if (event.message.text === '取得推播ID') {
       const source = event.source
       let replyText = `User ID: ${source.userId}`
