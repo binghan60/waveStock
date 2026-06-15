@@ -145,6 +145,7 @@ const chartOptions = computed(() => {
     maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
+      datalabels: { display: false },
       tooltip: {
         callbacks: {
           label: (ctx) => {

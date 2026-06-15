@@ -27,9 +27,10 @@ ChartJS.register(
   Tooltip,
   Legend,
   Title,
-  annotationPlugin,
-  datalabelsPlugin
+  annotationPlugin
 )
+
+const chartPlugins = [datalabelsPlugin]
 
 const props = defineProps({
   filterMode: { type: String, default: 'all' } // 'all' | '1m' | '3m'
@@ -369,6 +370,6 @@ const chartOptions = computed(() => {
     class="w-full h-[450px] mb-8 rounded-xl border p-2 relative overflow-hidden transition-all"
     :class="isStealth ? 'bg-white border-gray-200' : 'bg-zinc-900 border-zinc-800'"
   >
-    <Scatter :data="chartData" :options="chartOptions" />
+    <Scatter :data="chartData" :options="chartOptions" :plugins="chartPlugins" />
   </div>
 </template>
