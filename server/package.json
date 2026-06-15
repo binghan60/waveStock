@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "export:daily-kbars": "node scripts/export-selected-daily-kbars.js",
-    "test": "node --test --test-isolation=none",
+    "test": "node tests/run.js",
     "start": "nodemon index.js"
   },
   "keywords": [],

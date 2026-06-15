@@ -75,7 +75,7 @@ onUnmounted(() => {
 
       <!-- Tab Navigation -->
       <div class="mb-8 flex flex-col md:flex-row justify-between items-center border-b gap-4" :class="isStealth ? 'border-slate-200' : 'border-zinc-800'">
-        <div class="flex">
+        <div class="flex max-w-full overflow-x-auto">
           <router-link
             to="/dashboard"
             class="px-6 py-3 text-sm font-bold tracking-wider uppercase transition-all whitespace-nowrap border-b-2"
@@ -108,6 +108,17 @@ onUnmounted(() => {
             ]"
           >
             回測專區
+          </router-link>
+          <router-link
+            to="/trade-journal"
+            class="px-6 py-3 text-sm font-bold tracking-wider uppercase transition-all whitespace-nowrap border-b-2"
+            :class="[
+              $route.path.startsWith('/trade-journal')
+                ? (isStealth ? 'text-blue-600 border-blue-600' : 'text-blue-400 border-blue-400')
+                : (isStealth ? 'text-slate-500 border-transparent hover:bg-slate-100' : 'text-zinc-500 border-transparent hover:bg-zinc-800/50'),
+            ]"
+          >
+            交易績效
           </router-link>
         </div>
       </div>

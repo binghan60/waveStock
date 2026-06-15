@@ -4,6 +4,7 @@ import * as line from '@line/bot-sdk'
 import apiRoutes from './routes/apiRouter.js'
 import webhookRoutes from './routes/webhookRouter.js'
 import financeRoutes from './routes/financeRouter.js'
+import tradeJournalRoutes from './routes/tradeJournalRouter.js'
 import 'dotenv/config'
 import mongoose from 'mongoose'
 
@@ -27,6 +28,7 @@ mongoose
 app.use(cors())
 
 app.use('/api', apiRoutes)
+app.use('/api/trade-journal', tradeJournalRoutes)
 
 const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,

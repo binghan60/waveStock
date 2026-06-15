@@ -62,4 +62,14 @@ export default {
   getBacktestAll(params) {
     return apiClient.get('/backtest/all', { params })
   },
+
+  // 群組交易紀錄
+  getTradeJournalEntries(params) {
+    return apiClient.get('/trade-journal/entries', { params })
+  },
+
+  // 目前持股與累積績效
+  getTradeJournalPerformance(params) {
+    return apiClient.get('/trade-journal/performance', { params })
+  },
 }

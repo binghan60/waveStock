@@ -5,7 +5,9 @@ import axios from 'axios'
 import FormData from 'form-data'
 import sharp from 'sharp' // 記得要留著 sharp 用來壓縮
 import RecognizedStock from '../models/RecognizedStock.js'
+import TradeJournalEntry from '../models/TradeJournalEntry.js'
 import { fetchStockData } from '../services/stockService.js'
+import { parseTradeMessage } from '../services/tradeJournalService.js'
 import { fetchMorningMarketData } from '../services/finance/marketDataService.js'
 import { buildMorningBriefFlex } from '../services/finance/morningBriefFlex.js'
 
@@ -53,6 +55,7 @@ async function handleEvent(event, client) {
       }
       return client.replyMessage(event.replyToken, { type: 'text', text: replyText })
     }
+    await recordTradeMessage(event, client)
     // return client.replyMessage(event.replyToken, { type: 'text', text: event.message.text })
   }
 
@@ -65,6 +68,65 @@ async function handleEvent(event, client) {
   }
 
   return Promise.resolve(null)
+}
+
+async function recordTradeMessage(event, client) {
+  const trackedGroups = String(process.env.TRACKED_LINE_GROUP_IDS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+  if (trackedGroups.length && !trackedGroups.includes(event.source.groupId)) return null
+
+  let senderName = null
+  try {
+    if (event.source.groupId && event.source.userId) {
+      const profile = await client.getGroupMemberProfile(event.source.groupId, event.source.userId)
+      senderName = profile.displayName
+    } else if (event.source.roomId && event.source.userId) {
+      const profile = await client.getRoomMemberProfile(event.source.roomId, event.source.userId)
+      senderName = profile.displayName
+    }
+  } catch (error) {
+    console.warn('Unable to load LINE sender profile:', error.message)
+  }
+
+  const parsed = parseTradeMessage(event.message.text, { senderName })
+  if (!parsed) return null
+
+  let price = null
+  try {
+    const quotes = await fetchStockData(parsed.code)
+    const marketPrice = Number(quotes[0]?.currentPrice)
+    if (Number.isFinite(marketPrice) && marketPrice > 0) price = marketPrice
+  } catch (error) {
+    console.warn(`Unable to load market price for ${parsed.code}:`, error.message)
+  }
+
+  try {
+    const entry = await TradeJournalEntry.create({
+      platform: 'line',
+      groupId: event.source.groupId || null,
+      roomId: event.source.roomId || null,
+      userId: event.source.userId || null,
+      senderName,
+      messageId: event.message.id || null,
+      code: parsed.code,
+      name: parsed.name,
+      tradeType: parsed.tradeType,
+      action: parsed.action,
+      fraction: parsed.fraction,
+      price,
+      priceSource: price ? 'market_snapshot' : 'unknown',
+      isMarketOrder: parsed.isMarketOrder,
+      rawText: event.message.text,
+      occurredAt: event.timestamp ? new Date(event.timestamp) : new Date(),
+    })
+    console.log(`Trade journal: ${entry.action} ${entry.code} @ ${entry.price || 'unknown'}`)
+    return entry
+  } catch (error) {
+    if (error?.code === 11000) return null
+    throw error
+  }
 }
 
 // 👇 修改 handleImageMessage 裡的 API 設定
