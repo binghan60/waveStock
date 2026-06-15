@@ -55,7 +55,13 @@ async function handleEvent(event, client) {
       }
       return client.replyMessage(event.replyToken, { type: 'text', text: replyText })
     }
-    await recordTradeMessage(event, client)
+    const tradeEntry = await recordTradeMessage(event, client)
+    if (tradeEntry) {
+      return client.replyMessage(event.replyToken, {
+        type: 'text',
+        text: buildTradeRecordedReply(tradeEntry),
+      })
+    }
     // return client.replyMessage(event.replyToken, { type: 'text', text: event.message.text })
   }
 
@@ -68,6 +74,21 @@ async function handleEvent(event, client) {
   }
 
   return Promise.resolve(null)
+}
+
+function buildTradeRecordedReply(entry) {
+  const tradeTypeLabels = {
+    buy: '買進',
+    sell_half: '賣一半',
+    sell_all: '全賣',
+  }
+  const action = tradeTypeLabels[entry.tradeType] || entry.tradeType
+  const price = Number(entry.price)
+  const priceText = Number.isFinite(price) && price > 0
+    ? `紀錄價格：${price.toLocaleString('zh-TW', { maximumFractionDigits: 2 })}`
+    : '紀錄價格：尚未取得'
+
+  return `已記錄 Allen 交易\n${entry.name}(${entry.code}) ${action}\n${priceText}`
 }
 
 async function recordTradeMessage(event, client) {

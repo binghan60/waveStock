@@ -74,6 +74,7 @@ test('closes the remaining position after half and full sell messages', () => {
       code: '6209',
       name: '今國光',
       action: 'sell',
+      tradeType: 'sell_half',
       fraction: 0.5,
       price: 110,
       occurredAt: '2026-06-15T02:00:00.000Z',
@@ -82,6 +83,7 @@ test('closes the remaining position after half and full sell messages', () => {
       code: '6209',
       name: '今國光',
       action: 'sell',
+      tradeType: 'sell_all',
       fraction: 1,
       price: 120,
       occurredAt: '2026-06-15T03:00:00.000Z',
@@ -92,6 +94,9 @@ test('closes the remaining position after half and full sell messages', () => {
   assert.equal(result.summary.openPositionCount, 0)
   assert.equal(result.positions[0].quantity, 0)
   assert.equal(result.positions[0].status, 'closed')
+  assert.equal(result.positions[0].sellHalfReturnPct, 10)
+  assert.equal(result.positions[0].sellAllReturnPct, 20)
+  assert.equal(result.positions[0].averageSellReturnPct, 15)
 })
 
 test('calculates realized and unrealized performance after selling half', () => {
@@ -108,6 +113,7 @@ test('calculates realized and unrealized performance after selling half', () => 
         code: '2303',
         name: '聯電',
         action: 'sell',
+        tradeType: 'sell_half',
         fraction: 0.5,
         price: 120,
         occurredAt: '2026-06-15T02:00:00.000Z',
@@ -122,4 +128,7 @@ test('calculates realized and unrealized performance after selling half', () => 
   assert.equal(result.summary.totalReturnPct, 15)
   assert.equal(result.positions[0].quantity, 0.5)
   assert.equal(result.positions[0].averageCost, 100)
+  assert.equal(result.positions[0].sellHalfReturnPct, 20)
+  assert.equal(result.positions[0].sellAllReturnPct, null)
+  assert.equal(result.positions[0].averageSellReturnPct, 20)
 })

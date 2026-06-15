@@ -153,22 +153,22 @@ onMounted(fetchJournal)
         <span class="text-xs opacity-50">{{ closedPositions.length }} 檔已結清</span>
       </div>
       <div class="overflow-x-auto">
-        <table class="w-full text-sm min-w-[650px]">
+        <table class="w-full text-sm min-w-[700px]">
           <thead :class="isStealth ? 'bg-slate-50 text-slate-600' : 'bg-zinc-950 text-zinc-300'">
             <tr>
               <th class="px-4 py-3 text-left">股票</th>
-              <th class="px-4 py-3 text-right">買進次數</th>
-              <th class="px-4 py-3 text-right">賣出次數</th>
-              <th class="px-4 py-3 text-right">已實現損益</th>
+              <th class="px-4 py-3 text-right">賣一半績效</th>
+              <th class="px-4 py-3 text-right">全賣績效</th>
+              <th class="px-4 py-3 text-right">平均績效</th>
               <th class="px-4 py-3 text-center">狀態</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="position in closedPositions" :key="position.code" class="border-t" :class="isStealth ? 'border-slate-100' : 'border-zinc-800'">
               <td class="px-4 py-3"><span class="font-black">{{ position.code }}</span><span class="ml-2 opacity-50">{{ position.name }}</span></td>
-              <td class="px-4 py-3 text-right">{{ position.buyCount }}</td>
-              <td class="px-4 py-3 text-right">{{ position.sellCount }}</td>
-              <td class="px-4 py-3 text-right font-mono font-bold" :class="pnlClass(position.realizedPnl)">{{ formatNumber(position.realizedPnl) }}</td>
+              <td class="px-4 py-3 text-right font-mono font-bold" :class="position.sellHalfReturnPct === null ? '' : pnlClass(position.sellHalfReturnPct)">{{ formatPct(position.sellHalfReturnPct) }}</td>
+              <td class="px-4 py-3 text-right font-mono font-bold" :class="position.sellAllReturnPct === null ? '' : pnlClass(position.sellAllReturnPct)">{{ formatPct(position.sellAllReturnPct) }}</td>
+              <td class="px-4 py-3 text-right font-mono font-bold" :class="position.averageSellReturnPct === null ? '' : pnlClass(position.averageSellReturnPct)">{{ formatPct(position.averageSellReturnPct) }}</td>
               <td class="px-4 py-3 text-center"><span class="px-2 py-1 rounded-full text-xs" :class="isStealth ? 'bg-slate-100' : 'bg-zinc-800'">已結清</span></td>
             </tr>
             <tr v-if="!isLoading && closedPositions.length === 0">

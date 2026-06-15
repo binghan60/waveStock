@@ -71,15 +71,15 @@ export function calculateTradePerformance(records, currentPrices = {}) {
       quantity: 0,
       cost: 0,
       realizedPnl: 0,
-      buyCount: 0,
-      sellCount: 0,
+      sellHalfReturns: [],
+      sellAllReturns: [],
+      sellReturns: [],
     }
 
     if (record.action === 'buy') {
       const quantity = Number(record.quantity) > 0 ? Number(record.quantity) : 1
       position.quantity += quantity
       position.cost += quantity * price
-      position.buyCount += 1
       investedCost += quantity * price
     } else if (record.action === 'sell' && position.quantity > 0) {
       const fraction = Math.min(1, Math.max(0, Number(record.fraction) || 1))
@@ -89,11 +89,16 @@ export function calculateTradePerformance(records, currentPrices = {}) {
       )
       const averageCost = position.cost / position.quantity
       const pnl = quantity * (price - averageCost)
+      const returnPct = ((price - averageCost) / averageCost) * 100
+      const tradeType = record.tradeType
+        || (Number(record.fraction) === 0.5 ? 'sell_half' : 'sell_all')
 
       position.quantity -= quantity
       position.cost -= quantity * averageCost
       position.realizedPnl += pnl
-      position.sellCount += 1
+      position.sellReturns.push(returnPct)
+      if (tradeType === 'sell_half') position.sellHalfReturns.push(returnPct)
+      if (tradeType === 'sell_all') position.sellAllReturns.push(returnPct)
       realizedPnl += pnl
       sellProceeds += quantity * price
     }
@@ -118,13 +123,23 @@ export function calculateTradePerformance(records, currentPrices = {}) {
     }
 
     return {
-      ...position,
+      code: position.code,
+      name: position.name,
       quantity: round(position.quantity, 4),
       averageCost: round(averageCost),
       cost: round(position.cost),
       currentPrice: hasCurrentPrice ? round(currentPrice) : null,
       marketValue: round(value),
       realizedPnl: round(position.realizedPnl),
+      sellHalfReturnPct: position.sellHalfReturns.length
+        ? round(position.sellHalfReturns.reduce((sum, value) => sum + value, 0) / position.sellHalfReturns.length)
+        : null,
+      sellAllReturnPct: position.sellAllReturns.length
+        ? round(position.sellAllReturns.reduce((sum, value) => sum + value, 0) / position.sellAllReturns.length)
+        : null,
+      averageSellReturnPct: position.sellReturns.length
+        ? round(position.sellReturns.reduce((sum, value) => sum + value, 0) / position.sellReturns.length)
+        : null,
       unrealizedPnl: round(openPnl),
       returnPct: openPnl === null || position.cost <= 0 ? null : round((openPnl / position.cost) * 100),
       status: position.quantity > 0.000001 ? 'open' : 'closed',
