@@ -214,13 +214,13 @@ async function handleImageMessage(event, client) {
         console.log(`✅ 成功獲取股價: ${currentPrice}`)
       }
 
-      const thirtyDaysAgo = new Date()
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+      const fiveDaysAgo = new Date()
+      fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5)
 
-      // 查詢 30 天內是否已經有相同的股票代號
+      // 查詢 5 天內是否已經有相同的股票代號
       const existingStock = await RecognizedStock.findOne({
         code: stockData.code,
-        createdAt: { $gte: thirtyDaysAgo },
+        createdAt: { $gte: fiveDaysAgo },
       }).sort({ createdAt: -1 })
 
       if (existingStock) {
@@ -236,7 +236,7 @@ async function handleImageMessage(event, client) {
         await existingStock.save()
         console.log('✅ 股票資料已更新到資料庫:', stockData.code)
       } else {
-        // 超過 30 天或沒有該股票，新增一筆
+        // 超過 5 天或沒有該股票，新增一筆
         const recognizedStock = new RecognizedStock({
           code: stockData.code,
           support: stockData.support,
