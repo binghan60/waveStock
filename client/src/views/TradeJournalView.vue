@@ -27,9 +27,15 @@ const isLoading = ref(false)
 const error = ref('')
 
 const openPositions = computed(() => positions.value.filter((position) => position.status === 'open'))
-const realizedPositions = computed(() => positions.value.filter((position) =>
-  position.sellHalfReturnPct !== null || position.sellAllReturnPct !== null
-))
+const realizedPositions = computed(() => positions.value
+  .filter((position) =>
+    position.sellHalfReturnPct !== null || position.sellAllReturnPct !== null
+  )
+  .sort((a, b) => {
+    const buyTimeA = a.buyAt ? new Date(a.buyAt).getTime() : 0
+    const buyTimeB = b.buyAt ? new Date(b.buyAt).getTime() : 0
+    return buyTimeB - buyTimeA
+  }))
 
 const panelClass = computed(() => isStealth.value
   ? 'bg-white border-slate-200 shadow-sm'
