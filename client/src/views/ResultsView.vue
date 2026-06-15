@@ -370,8 +370,7 @@ const handleSavePrice = async (newPrice) => {
               <span v-else class="text-xs opacity-40">-</span>
             </td>
 
-
-            <!-- 狀態 (isSuccess) + 達標日期 -->
+            <!-- 戰果狀態 -->
             <td class="px-4 py-3 text-center align-middle">
               <div class="flex flex-col items-center justify-center gap-1">
                 <span
@@ -379,8 +378,9 @@ const handleSavePrice = async (newPrice) => {
                   :class="[
                     getStatusBg(stock.isSuccess, isStealth),
                     getStatusColor(stock.isSuccess, isStealth),
-                    stock.isSuccess !== null && !isStealth ? 'border border-current/30' : '',
-                    stock.isSuccess === null ? (isStealth ? 'bg-slate-100 text-slate-400' : 'bg-zinc-800 text-zinc-500 border border-zinc-700') : ''
+                    stock.isSuccess !== null && stock.isSuccess !== undefined && !isStealth
+                      ? 'border border-current/30'
+                      : '',
                   ]"
                 >
                   <template v-if="stock.isSuccess === true">✓ 成功</template>
@@ -388,36 +388,22 @@ const handleSavePrice = async (newPrice) => {
                   <template v-else>- 待定</template>
                 </span>
 
-                <div class="h-4 flex items-center justify-center">
-                  <span
-                    v-if="stock.isSuccess === true && stock.successDate"
-                    class="text-[10px] font-mono tracking-tight"
-                    :class="getStatusColor(true, isStealth) + ' opacity-70'"
-                  >
-                    {{
-                      new Date(stock.successDate).toLocaleDateString('zh-TW', {
-                        year: 'numeric',
-                        month: '2-digit',
-                        day: '2-digit',
-                      })
-                    }}
-                  </span>
-                  <span
-                    v-else-if="stock.isSuccess === false && stock.updatedAt"
-                    class="text-[10px] font-mono tracking-tight"
-                    :class="getStatusColor(false, isStealth) + ' opacity-70'"
-                  >
-                    {{
-                      new Date(stock.updatedAt).toLocaleDateString('zh-TW', {
-                        year: 'numeric',
-                        month: '2-digit',
-                        day: '2-digit',
-                      })
-                    }}
-                  </span>
-                </div>
+                <span
+                  v-if="stock.isSuccess !== null && stock.isSuccess !== undefined && stock.updatedAt"
+                  class="text-[10px] font-mono tracking-tight opacity-70"
+                  :class="getStatusColor(stock.isSuccess, isStealth)"
+                >
+                  {{
+                    new Date(stock.updatedAt).toLocaleDateString('zh-TW', {
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit',
+                    })
+                  }}
+                </span>
               </div>
             </td>
+
 
             <!-- 傳入時間 -->
             <td class="px-4 py-4 font-mono text-xs opacity-60">
@@ -512,7 +498,7 @@ const handleSavePrice = async (newPrice) => {
         <div>
           <div class="text-xs opacity-60 mb-1">待評估</div>
           <div class="text-2xl font-black text-zinc-500">
-            {{ recognizedStocks.filter((s) => s.isSuccess === null).length }}
+            {{ recognizedStocks.filter((s) => s.isSuccess === null || s.isSuccess === undefined).length }}
           </div>
         </div>
       </div>

@@ -44,6 +44,11 @@ const recognizedStockSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // 保留供未來人工或其他流程標記辨識結果
+    isSuccess: {
+      type: Boolean,
+      default: null,
+    },
   },
   {
     timestamps: true, // 自動加入 createdAt 和 updatedAt (記錄傳入時間)
@@ -54,8 +59,6 @@ const recognizedStockSchema = new mongoose.Schema(
 recognizedStockSchema.index({ code: 1, createdAt: -1 })
 recognizedStockSchema.index({ source: 1 })
 recognizedStockSchema.index({ isFavorite: 1 })
-// 建議也可以幫 successDate 加索引，方便查詢「最近達標」的股票
-recognizedStockSchema.index({ successDate: -1 })
 
 const RecognizedStock = mongoose.model('RecognizedStock', recognizedStockSchema)
 

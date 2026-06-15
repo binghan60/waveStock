@@ -230,7 +230,7 @@ async function handleImageMessage(event, client) {
         existingStock.waveProfit = stockData.waveProfit
         existingStock.swapRef = stockData.swapRef
         existingStock.currentPrice = currentPrice // 記錄當下股價
-        existingStock.isSuccess = null // 預留欄位，先給 null
+        existingStock.isSuccess = null
         existingStock.updatedAt = new Date()
 
         await existingStock.save()
@@ -244,7 +244,7 @@ async function handleImageMessage(event, client) {
           waveProfit: stockData.waveProfit,
           swapRef: stockData.swapRef,
           currentPrice: currentPrice, // 記錄當下股價
-          isSuccess: null, // 預留欄位，先給 null
+          isSuccess: null,
           source: 'system',
           isFavorite: false,
         })

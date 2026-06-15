@@ -1,9 +1,9 @@
 <script setup>
-import { computed, toRef, ref } from 'vue'
+import { computed, toRef } from 'vue'
 import { useStockFormatter } from '@/composables/useStockFormatter'
 import { useStockDetails } from '@/composables/useStockDetails'
 import { useStockColors } from '@/composables/useStockColors'
-import { Pin, PinOff, X, ArrowUp, ArrowDown, ChevronUp, ChevronDown } from 'lucide-vue-next'
+import { Pin, PinOff, X, ArrowUp, ArrowDown } from 'lucide-vue-next'
 
 const { formatPrice, formatNumber } = useStockFormatter()
 const { INDICATOR_COLORS } = useStockColors()
@@ -178,44 +178,6 @@ const formatAnalysisPrice = (val) => {
   return val || '無資料'
 }
 
-const isToday = (dateStr) => {
-  const d = new Date(dateStr)
-  const today = new Date()
-  return d.getDate() === today.getDate() &&
-         d.getMonth() === today.getMonth() &&
-         d.getFullYear() === today.getFullYear()
-}
-
-// Get hits for a specific indicator type
-const getIndicatorHits = (indicatorLabel) => {
-  if (!props.item.hitHistory || props.item.hitHistory.length === 0) return []
-  
-  // Map indicator labels to hit types
-  const typeMap = {
-    '換股': 'swap',
-    '支撐': 'support', 
-    '短線': 'shortTerm',
-    '波段': 'wave'
-  }
-  
-  const hitType = typeMap[indicatorLabel]
-  if (!hitType) return []
-  
-  return props.item.hitHistory.filter(hit => hit.type === hitType)
-}
-
-const getLatestHit = (indicatorLabel) => {
-  const hits = getIndicatorHits(indicatorLabel)
-  return hits.length > 0 ? hits[0] : null
-}
-
-const hasMoreHits = (indicatorLabel) => {
-  const hits = getIndicatorHits(indicatorLabel)
-  return hits.length > 1
-}
-
-const showHistoryForIndicator = ref({})
-const hoverHistoryForIndicator = ref({})
 </script>
 
 <template>
@@ -411,7 +373,7 @@ const hoverHistoryForIndicator = ref({})
       </div>
 
       <div class="grid grid-cols-2 gap-2 mt-3">
-        <!-- Regular Indicators with Hit History -->
+        <!-- Analysis indicators -->
         <div
           v-for="conf in [
             INDICATOR_COLORS.swap,
@@ -420,10 +382,7 @@ const hoverHistoryForIndicator = ref({})
             INDICATOR_COLORS.wave,
           ].filter(c => item[c.key])"
           :key="conf.key"
-          @click="() => { if (hasMoreHits(conf.label)) showHistoryForIndicator[conf.label] = !showHistoryForIndicator[conf.label] }"
-          @mouseenter="() => { if (hasMoreHits(conf.label)) hoverHistoryForIndicator[conf.label] = true }"
-          @mouseleave="() => { if (hasMoreHits(conf.label)) hoverHistoryForIndicator[conf.label] = false }"
-          class="relative flex flex-col p-2 rounded-xl border transition-all duration-500 min-h-22 max-h-56"
+          class="relative flex flex-col p-2 rounded-xl border transition-all duration-500 min-h-22"
           :class="[
             isStealth ? 'bg-gray-50 border-gray-100' : 'bg-white/5 border-transparent',
             priceInRange.matchedIndicators.includes(conf.label)
@@ -432,16 +391,12 @@ const hoverHistoryForIndicator = ref({})
                   'border-2',
                   isStealth ? 'bg-gray-200 text-slate-900 font-bold' : conf.textClass,
                 ]
-              : '',
-            hasMoreHits(conf.label) ? 'cursor-pointer group' : ''
+              : ''
           ]"
         >
           <div class="flex justify-between items-start mb-1">
             <span class="text-[10px] uppercase font-bold tracking-wider opacity-50 flex items-center gap-1">
               {{ conf.label }}
-              <span v-if="getIndicatorHits(conf.label).length > 0" class="text-[8px] opacity-70">
-                ({{ getIndicatorHits(conf.label).length }})
-              </span>
             </span>
             <div class="flex items-center gap-1">
               <span
@@ -460,10 +415,6 @@ const hoverHistoryForIndicator = ref({})
                 </template>
                 <template v-else>-</template>
               </span>
-              <span v-if="hasMoreHits(conf.label)" class="text-[9px] opacity-50 group-hover:opacity-100 transition-opacity ml-1">
-                <ChevronDown v-if="showHistoryForIndicator[conf.label]" class="w-3 h-3 opacity-60" />
-              <ChevronUp v-else class="w-3 h-3 opacity-60" />
-              </span>
             </div>
           </div>
           <div
@@ -473,52 +424,6 @@ const hoverHistoryForIndicator = ref({})
             {{ formatAnalysisPrice(item[conf.key]) }}
           </div>
 
-          <!-- Latest Hit Info -->
-          <div v-if="getLatestHit(conf.label)" class="mt-2 pt-2 border-t" :class="isStealth ? 'border-gray-200' : 'border-zinc-700'">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-1">
-                <span class="relative flex h-1.5 w-1.5">
-                  <template v-if="isToday(getLatestHit(conf.label).happenedAt)">
-                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                    <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
-                  </template>
-                </span>
-                <span class="text-[9px] font-mono font-bold" :class="isStealth ? 'text-slate-900' : 'text-white'">
-                  {{ getLatestHit(conf.label).triggerPrice.toFixed(2) }}
-                </span>
-              </div>
-              <span class="text-[9px] font-mono" :class="isToday(getLatestHit(conf.label).happenedAt) ? 'text-red-400 font-bold' : 'opacity-50'">
-                {{ isToday(getLatestHit(conf.label).happenedAt) ? 'TODAY' : new Date(getLatestHit(conf.label).happenedAt).toLocaleDateString('en-CA').slice(5) }}
-              </span>
-            </div>
-          </div>
-
-          <!-- Expanded Hit History -->
-          <transition
-            enter-active-class="transition-all duration-300 ease-out"
-            leave-active-class="transition-all duration-200 ease-in"
-            enter-from-class="opacity-0 max-h-0"
-            enter-to-class="opacity-100 max-h-40"
-            leave-from-class="opacity-100 max-h-40"
-            leave-to-class="opacity-0 max-h-0"
-          >
-            <div v-if="(showHistoryForIndicator[conf.label] || hoverHistoryForIndicator[conf.label]) && hasMoreHits(conf.label)" class="mt-2 pt-2 border-t overflow-hidden" :class="isStealth ? 'border-gray-200' : 'border-zinc-700'">
-              <div class="max-h-32 overflow-y-auto pr-1 custom-scrollbar">
-                <ul class="space-y-1">
-                  <li v-for="hit in getIndicatorHits(conf.label).slice(1, 10)" :key="hit._id" 
-                    class="flex justify-between items-center text-[10px] py-0.5 px-1 rounded opacity-70 hover:opacity-100 transition-all"
-                  >
-                    <span class="font-mono font-bold" :class="isStealth ? 'text-slate-900' : 'text-white'">
-                      {{ hit.triggerPrice.toFixed(2) }}
-                    </span>
-                    <span class="font-mono opacity-50">
-                      {{ new Date(hit.happenedAt).toLocaleDateString('en-CA').slice(5) }}
-                    </span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </transition>
         </div>
       </div>
 

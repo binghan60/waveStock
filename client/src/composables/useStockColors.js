@@ -44,10 +44,10 @@ export const INDICATOR_COLORS = {
 export function useStockColors() {
   const getStatusColor = (isSuccess, isStealth = false) => {
     if (isSuccess === true) {
-      return isStealth ? 'text-[#B3261E]' : 'text-rose-400' // M3 Error Color
+      return isStealth ? 'text-[#B3261E]' : 'text-rose-400'
     }
     if (isSuccess === false) {
-      return isStealth ? 'text-[#146C2E]' : 'text-emerald-400' 
+      return isStealth ? 'text-[#146C2E]' : 'text-emerald-400'
     }
     return isStealth ? 'text-[#5F6368]' : 'text-zinc-500'
   }
