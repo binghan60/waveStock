@@ -90,13 +90,15 @@ test('closes the remaining position after half and full sell messages', () => {
     },
   ])
 
-  assert.equal(result.summary.realizedPnl, 15)
+  assert.equal(result.summary.realizedPnl, 14.47)
   assert.equal(result.summary.openPositionCount, 0)
   assert.equal(result.positions[0].quantity, 0)
   assert.equal(result.positions[0].status, 'closed')
-  assert.equal(result.positions[0].sellHalfReturnPct, 10)
-  assert.equal(result.positions[0].sellAllReturnPct, 20)
-  assert.equal(result.positions[0].averageSellReturnPct, 15)
+  assert.equal(result.positions[0].sellHalfReturnPct, 9.48)
+  assert.equal(result.positions[0].sellAllReturnPct, 19.44)
+  assert.equal(result.positions[0].averageSellReturnPct, 14.46)
+  assert.equal(result.positions[0].sellHalfAt, '2026-06-15T02:00:00.000Z')
+  assert.equal(result.positions[0].sellAllAt, '2026-06-15T03:00:00.000Z')
 })
 
 test('calculates realized and unrealized performance after selling half', () => {
@@ -122,13 +124,14 @@ test('calculates realized and unrealized performance after selling half', () => 
     { 2303: 110 },
   )
 
-  assert.equal(result.summary.realizedPnl, 10)
-  assert.equal(result.summary.unrealizedPnl, 5)
-  assert.equal(result.summary.totalPnl, 15)
-  assert.equal(result.summary.totalReturnPct, 15)
+  assert.equal(result.summary.realizedPnl, 9.73)
+  assert.equal(result.summary.unrealizedPnl, 4.75)
+  assert.equal(result.summary.totalPnl, 14.47)
+  assert.equal(result.summary.totalReturnPct, 14.46)
   assert.equal(result.positions[0].quantity, 0.5)
-  assert.equal(result.positions[0].averageCost, 100)
-  assert.equal(result.positions[0].sellHalfReturnPct, 20)
+  assert.equal(result.positions[0].averageCost, 100.09)
+  assert.equal(result.positions[0].returnPct, 9.48)
+  assert.equal(result.positions[0].sellHalfReturnPct, 19.44)
   assert.equal(result.positions[0].sellAllReturnPct, null)
-  assert.equal(result.positions[0].averageSellReturnPct, 20)
+  assert.equal(result.positions[0].averageSellReturnPct, 19.44)
 })

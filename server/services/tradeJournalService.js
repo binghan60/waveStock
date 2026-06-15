@@ -17,6 +17,9 @@ const TRADE_TYPES = {
 }
 
 const REQUIRED_SENDER_MARKER = '綸(菁英)'
+const BROKER_FEE_RATE = 0.001425 * 0.6
+const SELL_TAX_RATE = 0.003
+const SELL_COST_RATE = BROKER_FEE_RATE + SELL_TAX_RATE
 
 export function parseTradeMessage(rawText, { senderName = '' } = {}) {
   const text = String(rawText || '').trim()
@@ -74,13 +77,17 @@ export function calculateTradePerformance(records, currentPrices = {}) {
       sellHalfReturns: [],
       sellAllReturns: [],
       sellReturns: [],
+      sellHalfAt: null,
+      sellAllAt: null,
     }
 
     if (record.action === 'buy') {
       const quantity = Number(record.quantity) > 0 ? Number(record.quantity) : 1
+      const grossAmount = quantity * price
+      const totalCost = grossAmount * (1 + BROKER_FEE_RATE)
       position.quantity += quantity
-      position.cost += quantity * price
-      investedCost += quantity * price
+      position.cost += totalCost
+      investedCost += totalCost
     } else if (record.action === 'sell' && position.quantity > 0) {
       const fraction = Math.min(1, Math.max(0, Number(record.fraction) || 1))
       const quantity = Math.min(
@@ -88,8 +95,11 @@ export function calculateTradePerformance(records, currentPrices = {}) {
         Number(record.quantity) > 0 ? Number(record.quantity) : position.quantity * fraction,
       )
       const averageCost = position.cost / position.quantity
-      const pnl = quantity * (price - averageCost)
-      const returnPct = ((price - averageCost) / averageCost) * 100
+      const allocatedCost = quantity * averageCost
+      const grossProceeds = quantity * price
+      const netProceeds = grossProceeds * (1 - SELL_COST_RATE)
+      const pnl = netProceeds - allocatedCost
+      const returnPct = (pnl / allocatedCost) * 100
       const tradeType = record.tradeType
         || (Number(record.fraction) === 0.5 ? 'sell_half' : 'sell_all')
 
@@ -97,10 +107,16 @@ export function calculateTradePerformance(records, currentPrices = {}) {
       position.cost -= quantity * averageCost
       position.realizedPnl += pnl
       position.sellReturns.push(returnPct)
-      if (tradeType === 'sell_half') position.sellHalfReturns.push(returnPct)
-      if (tradeType === 'sell_all') position.sellAllReturns.push(returnPct)
+      if (tradeType === 'sell_half') {
+        position.sellHalfReturns.push(returnPct)
+        position.sellHalfAt = record.occurredAt || record.createdAt || null
+      }
+      if (tradeType === 'sell_all') {
+        position.sellAllReturns.push(returnPct)
+        position.sellAllAt = record.occurredAt || record.createdAt || null
+      }
       realizedPnl += pnl
-      sellProceeds += quantity * price
+      sellProceeds += netProceeds
     }
 
     positions.set(record.code, position)
@@ -114,7 +130,8 @@ export function calculateTradePerformance(records, currentPrices = {}) {
     const averageCost = position.quantity > 0 ? position.cost / position.quantity : 0
     const hasCurrentPrice = Number.isFinite(currentPrice) && currentPrice > 0
     const value = hasCurrentPrice ? position.quantity * currentPrice : null
-    const openPnl = value === null ? null : value - position.cost
+    const netLiquidationValue = value === null ? null : value * (1 - SELL_COST_RATE)
+    const openPnl = netLiquidationValue === null ? null : netLiquidationValue - position.cost
 
     openCost += position.cost
     if (value !== null) {
@@ -140,6 +157,8 @@ export function calculateTradePerformance(records, currentPrices = {}) {
       averageSellReturnPct: position.sellReturns.length
         ? round(position.sellReturns.reduce((sum, value) => sum + value, 0) / position.sellReturns.length)
         : null,
+      sellHalfAt: position.sellHalfAt,
+      sellAllAt: position.sellAllAt,
       unrealizedPnl: round(openPnl),
       returnPct: openPnl === null || position.cost <= 0 ? null : round((openPnl / position.cost) * 100),
       status: position.quantity > 0.000001 ? 'open' : 'closed',
