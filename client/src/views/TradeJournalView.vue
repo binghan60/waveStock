@@ -49,6 +49,11 @@ const formatPct = (value) => {
   return `${number > 0 ? '+' : ''}${number.toFixed(2)}%`
 }
 
+const formatPositionPct = (value) => {
+  if (value === null || value === undefined) return '-'
+  return `${Number(value).toFixed(2)}%`
+}
+
 const formatDateTime = (value) => {
   if (!value) return '-'
   return new Intl.DateTimeFormat('zh-TW', {
@@ -62,7 +67,7 @@ const formatDateTime = (value) => {
   }).format(new Date(value))
 }
 
-const formatShortDate = (value) => {
+const formatTradeDate = (value) => {
   if (!value) return '-'
   return new Intl.DateTimeFormat('zh-TW', {
     timeZone: 'Asia/Taipei',
@@ -71,12 +76,10 @@ const formatShortDate = (value) => {
   }).format(new Date(value))
 }
 
-const formatDateTimeToMinute = (value) => {
+const formatTradeTime = (value) => {
   if (!value) return '-'
   return new Intl.DateTimeFormat('zh-TW', {
     timeZone: 'Asia/Taipei',
-    month: '2-digit',
-    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -85,32 +88,19 @@ const formatDateTimeToMinute = (value) => {
 
 const pnlClass = (value) => {
   const positive = Number(value) >= 0
-  if (isStealth.value) return positive ? 'text-red-600' : 'text-green-700'
+  if (isStealth.value) return positive ? 'text-slate-900' : 'text-slate-500'
   return positive ? 'text-red-400' : 'text-green-400'
-}
-
-const returnBadgeClass = (value) => {
-  if (value === null || value === undefined) return 'opacity-30'
-  const positive = Number(value) >= 0
-  if (isStealth.value) {
-    return positive 
-      ? 'bg-red-50 text-red-600 border border-red-200 px-2.5 py-0.5 rounded text-xs font-bold' 
-      : 'bg-green-50 text-green-700 border border-green-200 px-2.5 py-0.5 rounded text-xs font-bold'
-  }
-  return positive 
-    ? 'bg-red-500/10 text-red-400 border border-red-500/20 px-2.5 py-0.5 rounded text-xs font-bold shadow-[0_0_8px_rgba(239,68,68,0.1)]' 
-    : 'bg-green-500/10 text-green-400 border border-green-500/20 px-2.5 py-0.5 rounded text-xs font-bold shadow-[0_0_8px_rgba(34,197,94,0.1)]'
 }
 
 const summaryCards = computed(() => [
   { label: '目前持股', value: `${summary.value.openPositionCount || 0} 檔`, tone: null, icon: WalletCards },
+  { label: '交易訊號', value: `${summary.value.recordCount || 0} 筆`, tone: null, icon: History },
   { label: '持股成本', value: formatNumber(summary.value.openCost), tone: null, icon: Coins },
   { label: '目前市值', value: formatNumber(summary.value.marketValue), tone: null, icon: Activity },
-  { label: '已實現損益', value: formatNumber(summary.value.realizedPnl), tone: summary.value.realizedPnl, icon: Award },
   { label: '未實現損益', value: formatNumber(summary.value.unrealizedPnl), tone: summary.value.unrealizedPnl, icon: Clock },
+  { label: '已實現損益', value: formatNumber(summary.value.realizedPnl), tone: summary.value.realizedPnl, icon: Award },
   { label: '總損益', value: formatNumber(summary.value.totalPnl), tone: summary.value.totalPnl, icon: Wallet },
   { label: '累積報酬率', value: formatPct(summary.value.totalReturnPct), tone: summary.value.totalReturnPct, icon: Percent },
-  { label: '交易訊號', value: `${summary.value.recordCount || 0} 筆`, tone: null, icon: History },
 ])
 
 const cardClass = (card) => {
@@ -162,7 +152,6 @@ onMounted(fetchJournal)
             {{ isStealth ? '交易績效分析報告' : '群組交易績效' }}
           </h2>
         </div>
-        <p class="text-sm opacity-50 pl-12">記錄買進、減碼與出清績效</p>
       </div>
       <button
         class="self-start sm:self-auto inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold border transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
@@ -179,10 +168,47 @@ onMounted(fetchJournal)
     </div>
 
     <!-- Error -->
-    <div v-if="error" class="rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 px-4 py-3 text-sm flex items-center gap-2">
+    <div
+      v-if="error"
+      class="rounded-xl border px-4 py-3 text-sm flex items-center gap-2"
+      :class="isStealth
+        ? 'border-slate-300 bg-slate-100 text-slate-700'
+        : 'border-red-500/30 bg-red-500/10 text-red-400'"
+    >
       <Info class="w-4 h-4 shrink-0" />
       {{ error }}
     </div>
+
+    <!-- Calculation Notes -->
+    <section
+      class="rounded-xl border px-5 py-4"
+      :class="isStealth
+        ? 'bg-blue-50/60 border-blue-100 text-slate-700'
+        : 'bg-blue-500/[0.06] border-blue-500/20 text-zinc-300'"
+    >
+      <div class="flex items-start gap-3">
+        <Info class="w-4 h-4 mt-0.5 shrink-0 text-blue-500" />
+        <div class="min-w-0 flex-1">
+          <h3 class="text-xs font-black tracking-widest mb-2">績效計算方式</h3>
+          <p class="text-xs leading-5 opacity-80">
+            這是投顧訊號的模擬績效，非實際帳戶損益。每次買進固定投入
+            <strong class="font-mono text-blue-500">NT$100,000</strong>；
+            減碼視為賣出當時部位的 50%，出清則賣出全部剩餘部位。
+            成交價採訊息發出後下一分鐘的第一筆 Shioaji 成交價。
+          </p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-2 mt-3 text-[11px] leading-4">
+            <div><span class="font-bold">持股成本：</span><span class="opacity-65">剩餘部位買進成本，含買進手續費</span></div>
+            <div><span class="font-bold">目前市值：</span><span class="opacity-65">剩餘模擬股數 × 目前股價</span></div>
+            <div><span class="font-bold">已實現損益：</span><span class="opacity-65">已賣出部位損益，已扣交易成本</span></div>
+            <div><span class="font-bold">未實現損益：</span><span class="opacity-65">剩餘部位依目前股價估算</span></div>
+            <div><span class="font-bold">總損益：</span><span class="opacity-65">已實現損益 + 未實現損益</span></div>
+            <div><span class="font-bold">累積報酬率：</span><span class="opacity-65">總損益 ÷ 所有買進投入成本</span></div>
+            <div><span class="font-bold">交易成本：</span><span class="opacity-65">手續費 6 折；賣出另計 0.3% 證交稅</span></div>
+            <div><span class="font-bold">剩餘比例：</span><span class="opacity-65">未減碼 100%，賣一半後 50%</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- Summary Cards -->
     <!-- Loading State -->
@@ -230,32 +256,39 @@ onMounted(fetchJournal)
       </div>
     </div>
     <!-- Open Positions -->
-    <section class="rounded-xl border overflow-hidden transition-colors duration-300" :class="panelClass">
+    <section class="rounded-lg border overflow-hidden transition-colors duration-300" :class="panelClass">
       <div
-        class="px-5 py-4 flex items-center justify-between border-b"
-        :class="isStealth ? 'border-slate-200 bg-slate-50/50' : 'border-zinc-800 bg-zinc-950/60'"
+        class="px-4 py-3 flex items-center justify-between border-b"
+        :class="isStealth ? 'border-slate-200 bg-slate-100/80' : 'border-zinc-700 bg-zinc-950'"
       >
-        <h3 class="text-sm font-bold flex items-center gap-2.5 tracking-wide">
-          <WalletCards class="w-4 h-4 text-blue-500" />
+        <h3 class="text-xs font-black flex items-center gap-2 tracking-widest uppercase">
+          <WalletCards class="w-3.5 h-3.5 text-blue-500" />
           {{ isStealth ? '現有持股明細' : '目前持股' }}
         </h3>
         <span
-          class="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full"
-          :class="isStealth ? 'bg-slate-200 text-slate-600' : 'bg-zinc-800 text-zinc-300'"
-        >{{ openPositions.length }} 檔</span>
+          class="text-[10px] font-mono font-bold tracking-wider"
+          :class="isStealth ? 'text-slate-500' : 'text-zinc-500'"
+        >共 {{ openPositions.length }} 檔</span>
       </div>
       <div class="overflow-x-auto">
-        <table class="w-full text-sm min-w-[640px]">
+        <table class="w-full table-fixed text-sm min-w-[760px] border-collapse">
+          <colgroup>
+            <col class="w-[180px]">
+            <col class="w-[130px]">
+            <col class="w-[150px]">
+            <col class="w-[150px]">
+            <col class="w-[150px]">
+          </colgroup>
           <thead>
             <tr 
               class="border-b"
-              :class="isStealth ? 'text-slate-500 border-slate-100 bg-slate-50/20' : 'text-zinc-400 border-zinc-800/80 bg-zinc-900/10'"
+              :class="isStealth ? 'text-slate-500 border-slate-300 bg-slate-100' : 'text-zinc-500 border-zinc-700 bg-zinc-950'"
             >
-              <th class="px-6 py-3 text-left text-xs font-semibold tracking-wide">股票</th>
-              <th class="px-6 py-3 text-right text-xs font-semibold tracking-wide">剩餘部位</th>
-              <th class="px-6 py-3 text-right text-xs font-semibold tracking-wide">平均成本</th>
-              <th class="px-6 py-3 text-right text-xs font-semibold tracking-wide">目前股價</th>
-              <th class="px-6 py-3 text-right text-xs font-semibold tracking-wide">報酬率</th>
+              <th class="sticky left-0 z-20 px-4 py-3 text-left text-xs font-black tracking-[0.14em]" :class="isStealth ? 'bg-slate-100' : 'bg-zinc-950'">商品</th>
+              <th class="px-3 py-3 text-right text-xs font-black tracking-[0.14em]">剩餘比例</th>
+              <th class="px-3 py-3 text-right text-xs font-black tracking-[0.14em]">平均成本</th>
+              <th class="px-3 py-3 text-right text-xs font-black tracking-[0.14em]">目前股價</th>
+              <th class="px-4 py-3 text-right text-xs font-black tracking-[0.14em]">報酬率</th>
             </tr>
           </thead>
           
@@ -278,40 +311,35 @@ onMounted(fetchJournal)
             <tr
               v-for="position in openPositions"
               :key="position.code"
-              class="border-t transition-colors duration-300 relative group"
+              class="border-t transition-colors duration-150 relative group"
               :class="[
                 isStealth
-                  ? 'border-slate-100 hover:bg-slate-50/60'
-                  : 'border-zinc-800/60 hover:bg-zinc-800/25 trader-row-glow'
+                  ? 'border-slate-200 hover:bg-blue-50/60'
+                  : 'border-zinc-800 hover:bg-blue-500/[0.06] trader-row-glow'
               ]"
             >
-              <td class="px-6 py-3 align-middle relative z-10">
-                <div class="flex items-center gap-2">
-                  <span 
-                    :class="[
-                      isStealth 
-                        ? 'text-slate-700 font-semibold bg-slate-100 border border-slate-200/60 px-2.5 py-0.5 rounded font-mono text-xs' 
-                        : 'text-zinc-100 font-bold bg-zinc-800/60 border border-zinc-700/50 px-2.5 py-0.5 rounded font-mono text-xs'
-                    ]"
-                  >
+              <td
+                class="sticky left-0 z-10 px-4 py-3 align-middle border-r"
+                :class="isStealth ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-800'"
+              >
+                <div class="flex items-baseline gap-2">
+                  <span class="font-mono text-base font-black tabular-nums" :class="isStealth ? 'text-slate-900' : 'text-white'">
                     {{ position.code }}
                   </span>
-                  <span class="text-xs opacity-50 font-medium" :class="isStealth ? '' : 'text-zinc-400'">{{ position.name }}</span>
+                  <span class="text-sm font-bold truncate" :class="isStealth ? 'text-slate-500' : 'text-zinc-400'">{{ position.name }}</span>
                 </div>
               </td>
-              <td class="px-6 py-3 align-middle text-right font-mono tabular-nums font-semibold" :class="isStealth ? 'text-slate-700' : 'text-zinc-300'">
-                {{ formatNumber(position.quantity, 4) }}
+              <td class="px-3 py-3 align-middle text-right font-mono tabular-nums font-bold" :class="isStealth ? 'text-slate-700' : 'text-zinc-300'">
+                {{ formatPositionPct(position.remainingPositionPct) }}
               </td>
-              <td class="px-6 py-3 align-middle text-right font-mono tabular-nums" :class="isStealth ? 'text-slate-600' : 'text-zinc-400'">
+              <td class="px-3 py-3 align-middle text-right font-mono tabular-nums font-bold" :class="isStealth ? 'text-slate-700' : 'text-zinc-300'">
                 {{ formatNumber(position.averageCost) }}
               </td>
-              <td class="px-6 py-3 align-middle text-right font-mono tabular-nums" :class="isStealth ? 'text-slate-600' : 'text-zinc-400'">
+              <td class="px-3 py-3 align-middle text-right font-mono tabular-nums font-bold" :class="isStealth ? 'text-slate-700' : 'text-zinc-300'">
                 {{ formatNumber(position.currentPrice) }}
               </td>
-              <td class="px-6 py-3 align-middle text-right font-mono">
-                <span :class="returnBadgeClass(position.returnPct)">
-                  <span v-if="position.returnPct > 0" class="text-[9px] mr-0.5">▲</span>
-                  <span v-else-if="position.returnPct < 0" class="text-[9px] mr-0.5">▼</span>
+              <td class="px-4 py-3 align-middle text-right">
+                <span class="font-mono text-base font-black tabular-nums" :class="pnlClass(position.returnPct)">
                   {{ formatPct(position.returnPct) }}
                 </span>
               </td>
@@ -333,48 +361,59 @@ onMounted(fetchJournal)
     </section>
 
     <!-- Realized History -->
-    <section class="rounded-xl border overflow-hidden transition-colors duration-300" :class="panelClass">
+    <section class="rounded-lg border overflow-hidden transition-colors duration-300" :class="panelClass">
       <div
-        class="px-5 py-4 flex items-center justify-between border-b"
-        :class="isStealth ? 'border-slate-200 bg-slate-50/50' : 'border-zinc-800 bg-zinc-950/60'"
+        class="px-4 py-3 flex items-center justify-between border-b"
+        :class="isStealth ? 'border-slate-200 bg-slate-100/80' : 'border-zinc-700 bg-zinc-950'"
       >
-        <h3 class="text-sm font-bold flex items-center gap-2.5 tracking-wide">
-          <History class="w-4 h-4 text-emerald-500" />
+        <h3 class="text-xs font-black flex items-center gap-2 tracking-widest uppercase">
+          <History class="w-3.5 h-3.5 text-blue-500" />
           {{ isStealth ? '歷史交易績效' : '歷史績效' }}
         </h3>
         <span
-          class="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full"
-          :class="isStealth ? 'bg-slate-200 text-slate-600' : 'bg-zinc-800 text-zinc-300'"
-        >{{ realizedPositions.length }} 筆</span>
+          class="text-[10px] font-mono font-bold tracking-wider"
+          :class="isStealth ? 'text-slate-500' : 'text-zinc-500'"
+        >共 {{ realizedPositions.length }} 檔</span>
       </div>
       <div class="overflow-x-auto">
-        <table class="w-full text-sm min-w-[560px]">
-          <thead>
+        <table class="w-full table-fixed text-sm min-w-[900px] border-collapse">
+          <colgroup>
+            <col class="w-[180px]">
+            <col class="w-[150px]">
+            <col class="w-[180px]">
+            <col class="w-[180px]">
+            <col class="w-[130px]">
+          </colgroup>
+          <thead class="sticky top-0 z-20">
             <tr 
               class="border-b"
-              :class="isStealth ? 'text-slate-500 border-slate-100 bg-slate-50/20' : 'text-zinc-400 border-zinc-800/80 bg-zinc-900/10'"
+              :class="isStealth ? 'text-slate-500 border-slate-300 bg-slate-100' : 'text-zinc-500 border-zinc-700 bg-zinc-950'"
             >
-              <th class="px-6 py-3 text-left text-xs font-semibold tracking-wide">股票</th>
-              <th class="px-6 py-3 text-right text-xs font-semibold tracking-wide">減碼</th>
-              <th class="px-6 py-3 text-right text-xs font-semibold tracking-wide">出清</th>
-              <th class="px-6 py-3 text-right text-xs font-semibold tracking-wide">平均績效</th>
+              <th class="sticky left-0 z-30 px-4 py-3 text-left text-xs font-black tracking-[0.14em]" :class="isStealth ? 'bg-slate-100' : 'bg-zinc-950'">商品</th>
+              <th class="px-3 py-3 text-right text-xs font-black tracking-[0.14em]">買入</th>
+              <th class="px-3 py-3 text-right text-xs font-black tracking-[0.14em]">減碼</th>
+              <th class="px-3 py-3 text-right text-xs font-black tracking-[0.14em]">出清</th>
+              <th class="px-4 py-3 text-right text-xs font-black tracking-[0.14em]">總績效</th>
             </tr>
           </thead>
           
           <!-- Loading state for table -->
           <tbody v-if="isLoading">
-            <tr v-for="i in 3" :key="i" class="border-t animate-pulse" :class="isStealth ? 'border-slate-100' : 'border-zinc-800/60'">
-              <td class="px-6 py-3 align-middle">
+            <tr v-for="i in 5" :key="i" class="border-t animate-pulse" :class="isStealth ? 'border-slate-200' : 'border-zinc-800'">
+              <td class="px-4 py-3 align-middle">
                 <div class="h-4 w-12 rounded mb-2" :class="isStealth ? 'bg-slate-200' : 'bg-zinc-800'" />
                 <div class="h-3 w-16 rounded" :class="isStealth ? 'bg-slate-100' : 'bg-zinc-800/50'" />
               </td>
-              <td class="px-6 py-3 align-middle">
+              <td class="px-3 py-3 align-middle">
                 <div class="h-4 w-24 rounded ml-auto" :class="isStealth ? 'bg-slate-100' : 'bg-zinc-800/50'" />
               </td>
-              <td class="px-6 py-3 align-middle">
+              <td class="px-3 py-3 align-middle">
                 <div class="h-4 w-24 rounded ml-auto" :class="isStealth ? 'bg-slate-100' : 'bg-zinc-800/50'" />
               </td>
-              <td class="px-6 py-3 align-middle"><div class="h-5 w-20 rounded ml-auto" :class="isStealth ? 'bg-slate-200' : 'bg-zinc-800'" /></td>
+              <td class="px-3 py-3 align-middle">
+                <div class="h-4 w-24 rounded ml-auto" :class="isStealth ? 'bg-slate-100' : 'bg-zinc-800/50'" />
+              </td>
+              <td class="px-4 py-3 align-middle"><div class="h-5 w-20 rounded ml-auto" :class="isStealth ? 'bg-slate-200' : 'bg-zinc-800'" /></td>
             </tr>
           </tbody>
 
@@ -383,73 +422,86 @@ onMounted(fetchJournal)
             <tr
               v-for="position in realizedPositions"
               :key="position.code"
-              class="border-t transition-colors duration-300 relative"
+              class="border-t transition-colors duration-150 relative"
               :class="[
                 isStealth
-                  ? 'border-slate-100 hover:bg-slate-50/60'
-                  : 'border-zinc-800/60 hover:bg-zinc-800/25 trader-row-glow'
+                  ? 'border-slate-200 hover:bg-blue-50/60'
+                  : 'border-zinc-800 hover:bg-blue-500/[0.06] trader-row-glow'
               ]"
             >
-              <td class="px-6 py-3 align-middle">
-                <div class="flex items-center gap-2">
-                  <span 
-                    :class="[
-                      isStealth 
-                        ? 'text-slate-700 font-semibold bg-slate-100 border border-slate-200/60 px-2.5 py-0.5 rounded font-mono text-xs' 
-                        : 'text-zinc-100 font-bold bg-zinc-800/60 border border-zinc-700/50 px-2.5 py-0.5 rounded font-mono text-xs'
-                    ]"
-                  >
+              <td
+                class="sticky left-0 z-10 px-4 py-3 align-middle border-r"
+                :class="isStealth ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-800'"
+              >
+                <div class="flex items-baseline gap-2">
+                  <span class="font-mono text-base font-black tabular-nums" :class="isStealth ? 'text-slate-900' : 'text-white'">
                     {{ position.code }}
                   </span>
-                  <span class="text-xs opacity-50 font-medium" :class="isStealth ? '' : 'text-zinc-400'">{{ position.name }}</span>
+                  <span class="text-sm font-bold truncate" :class="isStealth ? 'text-slate-500' : 'text-zinc-400'">{{ position.name }}</span>
+                </div>
+              </td>
+
+              <!-- 買入 -->
+              <td class="px-3 py-2 align-middle text-right">
+                <div class="trade-quote-cell" :title="`買入時間: ${formatDateTime(position.buyAt)}`">
+                  <span class="trade-time" :class="isStealth ? 'text-slate-400' : 'text-zinc-600'">
+                    {{ formatTradeDate(position.buyAt) }} {{ formatTradeTime(position.buyAt) }}
+                  </span>
+                  <span class="trade-price" :class="isStealth ? 'text-slate-800' : 'text-zinc-200'">
+                    {{ formatNumber(position.buyPrice) }}
+                  </span>
                 </div>
               </td>
               
               <!-- 減碼 -->
-              <td class="px-6 py-3 align-middle text-right">
-                <div v-if="position.sellHalfReturnPct !== null" class="inline-flex items-center justify-end gap-2" :title="`減碼時間: ${formatDateTime(position.sellHalfAt)}`">
-                  <span class="text-[11px] opacity-40 font-mono tracking-tight whitespace-nowrap">
-                    {{ formatDateTimeToMinute(position.sellHalfAt) }}
+              <td class="px-3 py-2 align-middle text-right">
+                <div v-if="position.sellHalfReturnPct !== null" class="trade-quote-cell" :title="`減碼時間: ${formatDateTime(position.sellHalfAt)}`">
+                  <span class="trade-time" :class="isStealth ? 'text-slate-400' : 'text-zinc-600'">
+                    {{ formatTradeDate(position.sellHalfAt) }} {{ formatTradeTime(position.sellHalfAt) }}
                   </span>
-                  <span :class="returnBadgeClass(position.sellHalfReturnPct)">
-                    <span v-if="position.sellHalfReturnPct > 0" class="text-[9px] mr-0.5">▲</span>
-                    <span v-else-if="position.sellHalfReturnPct < 0" class="text-[9px] mr-0.5">▼</span>
-                    {{ formatPct(position.sellHalfReturnPct) }}
-                  </span>
+                  <div class="flex items-baseline justify-end gap-2">
+                    <span class="trade-price" :class="pnlClass(position.sellHalfReturnPct)">
+                      {{ formatNumber(position.sellHalfPrice) }}
+                    </span>
+                    <span class="font-mono text-xs font-black tabular-nums" :class="pnlClass(position.sellHalfReturnPct)">
+                      {{ formatPct(position.sellHalfReturnPct) }}
+                    </span>
+                  </div>
                 </div>
-                <span v-else class="text-xs opacity-30 px-2 py-0.5 rounded border border-dashed inline-block align-middle" :class="isStealth ? 'border-slate-200 text-slate-400' : 'border-zinc-800 text-zinc-600'">
-                  未減碼
+                <span v-else class="font-mono text-[11px]" :class="isStealth ? 'text-slate-300' : 'text-zinc-700'">
+                  --
                 </span>
               </td>
               
               <!-- 出清 -->
-              <td class="px-6 py-3 align-middle text-right">
-                <div v-if="position.sellAllReturnPct !== null" class="inline-flex items-center justify-end gap-2" :title="`出清時間: ${formatDateTime(position.sellAllAt)}`">
-                  <span class="text-[11px] opacity-40 font-mono tracking-tight whitespace-nowrap">
-                    {{ formatDateTimeToMinute(position.sellAllAt) }}
+              <td class="px-3 py-2 align-middle text-right">
+                <div v-if="position.sellAllReturnPct !== null" class="trade-quote-cell" :title="`出清時間: ${formatDateTime(position.sellAllAt)}`">
+                  <span class="trade-time" :class="isStealth ? 'text-slate-400' : 'text-zinc-600'">
+                    {{ formatTradeDate(position.sellAllAt) }} {{ formatTradeTime(position.sellAllAt) }}
                   </span>
-                  <span :class="returnBadgeClass(position.sellAllReturnPct)">
-                    <span v-if="position.sellAllReturnPct > 0" class="text-[9px] mr-0.5">▲</span>
-                    <span v-else-if="position.sellAllReturnPct < 0" class="text-[9px] mr-0.5">▼</span>
-                    {{ formatPct(position.sellAllReturnPct) }}
-                  </span>
+                  <div class="flex items-baseline justify-end gap-2">
+                    <span class="trade-price" :class="pnlClass(position.sellAllReturnPct)">
+                      {{ formatNumber(position.sellAllPrice) }}
+                    </span>
+                    <span class="font-mono text-xs font-black tabular-nums" :class="pnlClass(position.sellAllReturnPct)">
+                      {{ formatPct(position.sellAllReturnPct) }}
+                    </span>
+                  </div>
                 </div>
-                <span v-else class="text-xs opacity-30 px-2 py-0.5 rounded border border-dashed inline-block align-middle" :class="isStealth ? 'border-slate-200 text-slate-400' : 'border-zinc-800 text-zinc-600'">
-                  未出清
+                <span v-else class="font-mono text-[11px]" :class="isStealth ? 'text-slate-300' : 'text-zinc-700'">
+                  --
                 </span>
               </td>
               
               <!-- 平均績效 -->
-              <td class="px-6 py-3 align-middle text-right">
-                <span :class="returnBadgeClass(position.averageSellReturnPct)" class="font-extrabold text-sm tracking-tight inline-block align-middle">
-                  <span v-if="position.averageSellReturnPct > 0" class="text-[9px] mr-0.5">▲</span>
-                  <span v-else-if="position.averageSellReturnPct < 0" class="text-[9px] mr-0.5">▼</span>
+              <td class="px-4 py-3 align-middle text-right">
+                <span class="font-mono text-base font-black tabular-nums" :class="pnlClass(position.averageSellReturnPct)">
                   {{ formatPct(position.averageSellReturnPct) }}
                 </span>
               </td>
             </tr>
             <tr v-if="realizedPositions.length === 0">
-              <td colspan="4" class="px-6 py-16 text-center">
+              <td colspan="5" class="px-6 py-16 text-center">
                 <div class="flex flex-col items-center justify-center gap-3 py-6">
                   <div class="p-3 rounded-full" :class="isStealth ? 'bg-slate-100' : 'bg-zinc-800/40'">
                     <History class="w-8 h-8 opacity-40" />
@@ -486,6 +538,32 @@ onMounted(fetchJournal)
 
 .trader-row-glow:hover td:first-child::before {
   opacity: 1;
+}
+
+.trade-quote-cell {
+  display: inline-flex;
+  min-width: 112px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.trade-price {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 1rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.trade-time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 tr {

@@ -53,13 +53,14 @@ const round = (value, digits = 2) => {
 }
 
 export function calculateTradePerformance(records, currentPrices = {}) {
+  const eligibleRecords = records.filter((record) => record.performanceEligible !== false)
   const positions = new Map()
   let realizedPnl = 0
   let investedCost = 0
   let sellProceeds = 0
   let pricedRecordCount = 0
 
-  const sortedRecords = [...records].sort((a, b) => {
+  const sortedRecords = [...eligibleRecords].sort((a, b) => {
     return new Date(a.occurredAt || a.createdAt) - new Date(b.occurredAt || b.createdAt)
   })
 
@@ -73,10 +74,17 @@ export function calculateTradePerformance(records, currentPrices = {}) {
       name: record.name || record.code,
       quantity: 0,
       cost: 0,
+      buyQuantity: 0,
+      buyGrossAmount: 0,
+      buyAt: null,
       realizedPnl: 0,
       sellHalfReturns: [],
       sellAllReturns: [],
       sellReturns: [],
+      sellHalfQuantity: 0,
+      sellHalfGrossAmount: 0,
+      sellAllQuantity: 0,
+      sellAllGrossAmount: 0,
       sellHalfAt: null,
       sellAllAt: null,
     }
@@ -87,6 +95,9 @@ export function calculateTradePerformance(records, currentPrices = {}) {
       const totalCost = grossAmount * (1 + BROKER_FEE_RATE)
       position.quantity += quantity
       position.cost += totalCost
+      position.buyQuantity += quantity
+      position.buyGrossAmount += grossAmount
+      position.buyAt ||= record.occurredAt || record.createdAt || null
       investedCost += totalCost
     } else if (record.action === 'sell' && position.quantity > 0) {
       const fraction = Math.min(1, Math.max(0, Number(record.fraction) || 1))
@@ -109,10 +120,14 @@ export function calculateTradePerformance(records, currentPrices = {}) {
       position.sellReturns.push(returnPct)
       if (tradeType === 'sell_half') {
         position.sellHalfReturns.push(returnPct)
+        position.sellHalfQuantity += quantity
+        position.sellHalfGrossAmount += grossProceeds
         position.sellHalfAt = record.occurredAt || record.createdAt || null
       }
       if (tradeType === 'sell_all') {
         position.sellAllReturns.push(returnPct)
+        position.sellAllQuantity += quantity
+        position.sellAllGrossAmount += grossProceeds
         position.sellAllAt = record.occurredAt || record.createdAt || null
       }
       realizedPnl += pnl
@@ -143,6 +158,13 @@ export function calculateTradePerformance(records, currentPrices = {}) {
       code: position.code,
       name: position.name,
       quantity: round(position.quantity, 4),
+      remainingPositionPct: position.buyQuantity > 0
+        ? round((position.quantity / position.buyQuantity) * 100)
+        : 0,
+      buyPrice: position.buyQuantity > 0
+        ? round(position.buyGrossAmount / position.buyQuantity)
+        : null,
+      buyAt: position.buyAt,
       averageCost: round(averageCost),
       cost: round(position.cost),
       currentPrice: hasCurrentPrice ? round(currentPrice) : null,
@@ -151,8 +173,14 @@ export function calculateTradePerformance(records, currentPrices = {}) {
       sellHalfReturnPct: position.sellHalfReturns.length
         ? round(position.sellHalfReturns.reduce((sum, value) => sum + value, 0) / position.sellHalfReturns.length)
         : null,
+      sellHalfPrice: position.sellHalfQuantity > 0
+        ? round(position.sellHalfGrossAmount / position.sellHalfQuantity)
+        : null,
       sellAllReturnPct: position.sellAllReturns.length
         ? round(position.sellAllReturns.reduce((sum, value) => sum + value, 0) / position.sellAllReturns.length)
+        : null,
+      sellAllPrice: position.sellAllQuantity > 0
+        ? round(position.sellAllGrossAmount / position.sellAllQuantity)
         : null,
       averageSellReturnPct: position.sellReturns.length
         ? round(position.sellReturns.reduce((sum, value) => sum + value, 0) / position.sellReturns.length)
@@ -168,7 +196,8 @@ export function calculateTradePerformance(records, currentPrices = {}) {
   const totalPnl = realizedPnl + unrealizedPnl
   return {
     summary: {
-      recordCount: records.length,
+      recordCount: eligibleRecords.length,
+      excludedRecordCount: records.length - eligibleRecords.length,
       pricedRecordCount,
       openPositionCount: positionList.filter((position) => position.status === 'open').length,
       investedCost: round(investedCost),

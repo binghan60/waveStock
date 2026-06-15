@@ -93,9 +93,14 @@ test('closes the remaining position after half and full sell messages', () => {
   assert.equal(result.summary.realizedPnl, 14.47)
   assert.equal(result.summary.openPositionCount, 0)
   assert.equal(result.positions[0].quantity, 0)
+  assert.equal(result.positions[0].remainingPositionPct, 0)
   assert.equal(result.positions[0].status, 'closed')
+  assert.equal(result.positions[0].buyPrice, 100)
+  assert.equal(result.positions[0].buyAt, '2026-06-15T01:00:00.000Z')
   assert.equal(result.positions[0].sellHalfReturnPct, 9.48)
+  assert.equal(result.positions[0].sellHalfPrice, 110)
   assert.equal(result.positions[0].sellAllReturnPct, 19.44)
+  assert.equal(result.positions[0].sellAllPrice, 120)
   assert.equal(result.positions[0].averageSellReturnPct, 14.46)
   assert.equal(result.positions[0].sellHalfAt, '2026-06-15T02:00:00.000Z')
   assert.equal(result.positions[0].sellAllAt, '2026-06-15T03:00:00.000Z')
@@ -129,9 +134,43 @@ test('calculates realized and unrealized performance after selling half', () => 
   assert.equal(result.summary.totalPnl, 14.47)
   assert.equal(result.summary.totalReturnPct, 14.46)
   assert.equal(result.positions[0].quantity, 0.5)
+  assert.equal(result.positions[0].remainingPositionPct, 50)
+  assert.equal(result.positions[0].buyPrice, 100)
+  assert.equal(result.positions[0].buyAt, '2026-06-15T01:00:00.000Z')
   assert.equal(result.positions[0].averageCost, 100.09)
   assert.equal(result.positions[0].returnPct, 9.48)
   assert.equal(result.positions[0].sellHalfReturnPct, 19.44)
+  assert.equal(result.positions[0].sellHalfPrice, 120)
   assert.equal(result.positions[0].sellAllReturnPct, null)
+  assert.equal(result.positions[0].sellAllPrice, null)
   assert.equal(result.positions[0].averageSellReturnPct, 19.44)
+})
+
+test('excludes legacy sells without a known buy cost from performance', () => {
+  const result = calculateTradePerformance([
+    {
+      code: '2449',
+      name: '京元電',
+      action: 'sell',
+      tradeType: 'sell_all',
+      fraction: 1,
+      price: 321,
+      performanceEligible: false,
+      occurredAt: '2026-05-08T01:44:00.000Z',
+    },
+    {
+      code: '1727',
+      name: '中華化',
+      action: 'buy',
+      quantity: 1000,
+      price: 100,
+      occurredAt: '2026-05-11T01:45:00.000Z',
+    },
+  ])
+
+  assert.equal(result.summary.recordCount, 1)
+  assert.equal(result.summary.excludedRecordCount, 1)
+  assert.equal(result.summary.openPositionCount, 1)
+  assert.equal(result.positions.length, 1)
+  assert.equal(result.positions[0].code, '1727')
 })

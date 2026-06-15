@@ -1,2 +1,9 @@
 node_modules
 *.env
+.venv/
+.tmp/
+data/line-export.txt
+data/trade-journal-preview.json
+__pycache__/
+*.pyc
+shioaji.log

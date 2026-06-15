@@ -72,7 +72,11 @@ router.get('/performance', async (req, res) => {
   const entries = await TradeJournalEntry.find(buildQuery(req.query))
     .sort({ occurredAt: 1 })
     .lean()
-  const openCodes = [...new Set(entries.map((entry) => entry.code))]
+  const openCodes = [...new Set(
+    entries
+      .filter((entry) => entry.performanceEligible !== false)
+      .map((entry) => entry.code),
+  )]
   const quotes = openCodes.length ? await fetchStockData(openCodes) : []
   const prices = Object.fromEntries(
     quotes.map((quote) => [quote.symbol, Number(quote.currentPrice)]),
