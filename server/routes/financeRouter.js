@@ -131,9 +131,14 @@ async function deliverOnce({ client, recipientId, deliveryDate, message, force }
     await delivery.save()
     return { recipientId, status: 'sent' }
   } catch (error) {
+    const lineDetail = error.response?.data
+    const errorMsg = lineDetail
+      ? `${error.message} | LINE: ${JSON.stringify(lineDetail)}`
+      : error.message
+    console.error('pushMessage failed:', errorMsg)
     delivery.status = 'failed'
-    delivery.error = error.message
+    delivery.error = errorMsg
     await delivery.save()
-    return { recipientId, status: 'failed', error: error.message }
+    return { recipientId, status: 'failed', error: errorMsg }
   }
 }
