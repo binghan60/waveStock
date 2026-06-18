@@ -1,7 +1,7 @@
 import express from 'express'
 import TradeJournalEntry from '../models/TradeJournalEntry.js'
 import { fetchStockData } from '../services/stockService.js'
-import { calculateTradePerformance, parseTradeMessage } from '../services/tradeJournalService.js'
+import { calculateTradePerformance, parseTradeMessages } from '../services/tradeJournalService.js'
 
 const router = express.Router()
 router.use(express.json())
@@ -15,26 +15,29 @@ const buildQuery = (query) => {
 }
 
 router.post('/parse', (req, res) => {
-  const parsed = parseTradeMessage(req.body.text, { senderName: req.body.senderName })
-  if (!parsed) return res.status(422).json({ error: '無法辨識股票交易訊息' })
-  return res.json(parsed)
+  const parsedList = parseTradeMessages(req.body.text, { senderName: req.body.senderName })
+  if (!parsedList || parsedList.length === 0) return res.status(422).json({ error: '無法辨識股票交易訊息' })
+  return res.json(parsedList)
 })
 
 router.post('/entries', async (req, res) => {
   try {
-    const parsed = parseTradeMessage(req.body.rawText || req.body.text, {
+    const parsedList = parseTradeMessages(req.body.rawText || req.body.text, {
       senderName: req.body.senderName,
     })
-    if (!parsed) return res.status(422).json({ error: '無法辨識股票交易訊息' })
+    if (!parsedList || parsedList.length === 0) return res.status(422).json({ error: '無法辨識股票交易訊息' })
 
-    const entry = await TradeJournalEntry.create({
-      ...parsed,
-      ...req.body,
-      rawText: req.body.rawText || req.body.text,
-      priceSource: req.body.price ? 'manual' : 'unknown',
-      occurredAt: req.body.occurredAt || new Date(),
-    })
-    return res.status(201).json(entry)
+    const entries = await Promise.all(parsedList.map(async (parsed) => {
+      return await TradeJournalEntry.create({
+        ...parsed,
+        ...req.body,
+        rawText: req.body.rawText || req.body.text,
+        priceSource: req.body.price ? 'manual' : 'unknown',
+        occurredAt: req.body.occurredAt || new Date(),
+      })
+    }))
+    
+    return res.status(201).json(entries)
   } catch (error) {
     return res.status(400).json({ error: error.message })
   }

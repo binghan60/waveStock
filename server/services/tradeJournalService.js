@@ -1,16 +1,16 @@
 const TRADE_TYPES = {
   buy: {
-    pattern: /(?:市價)?買進/,
+    pattern: /市價買進|轉入|換股/,
     action: 'buy',
     fraction: 1,
   },
   sell_half: {
-    pattern: /(?:市價)?(?:獲利|賣出)?一半|賣一半/,
+    pattern: /(?:市價)?(?:獲利|賣出|出場|入袋)一半|賣一半/,
     action: 'sell',
     fraction: 0.5,
   },
   sell_all: {
-    pattern: /(?:剩餘部位)?全數出場|全部出場|全賣|清倉/,
+    pattern: /(?:剩餘部位|市價)?(?:全數|全部)(?:獲利|小賺|賣出)*(?:出場|賣出)|全賣|清倉|市價賣出(?!\s*一半)|收回資金/,
     action: 'sell',
     fraction: 1,
   },
@@ -21,29 +21,36 @@ const BROKER_FEE_RATE = 0.001425 * 0.6
 const SELL_TAX_RATE = 0.003
 const SELL_COST_RATE = BROKER_FEE_RATE + SELL_TAX_RATE
 
-export function parseTradeMessage(rawText, { senderName = '' } = {}) {
+export function parseTradeMessages(rawText, { senderName = '' } = {}) {
   const text = String(rawText || '').trim()
-  if (!text) return null
-  if (!text.includes(REQUIRED_SENDER_MARKER) && !String(senderName).includes(REQUIRED_SENDER_MARKER)) {
-    return null
+  if (!text) return []
+
+  if (!text.startsWith(REQUIRED_SENDER_MARKER) && !String(senderName).includes(REQUIRED_SENDER_MARKER)) {
+    return []
   }
 
-  const stockMatch = text.match(/([\p{Script=Han}A-Za-z0-9*._-]+)\s*[（(]\s*(\d{4,6})\s*[）)]/u)
-  if (!stockMatch) return null
+  const results = []
+  const lines = text.split('\n')
+  for (const line of lines) {
+    const stockMatch = line.match(/([\p{Script=Han}A-Za-z0-9*._-]+)\s*[（(]\s*(\d{4,6})\s*[）)]/u)
+    if (!stockMatch) continue
 
-  const tradeType = Object.entries(TRADE_TYPES).find(([, config]) => config.pattern.test(text))
-  if (!tradeType) return null
-  const [type, config] = tradeType
+    const tradeType = Object.entries(TRADE_TYPES).find(([, config]) => config.pattern.test(line))
+    if (!tradeType) continue
+    const [type, config] = tradeType
 
-  return {
-    code: stockMatch[2],
-    name: stockMatch[1].replace(/^[-_.]+|[-_.]+$/g, ''),
-    tradeType: type,
-    action: config.action,
-    fraction: config.fraction,
-    isMarketOrder: text.includes('市價'),
-    note: text,
+    results.push({
+      code: stockMatch[2],
+      name: stockMatch[1].replace(/^[-_.]+|[-_.]+$/g, ''),
+      tradeType: type,
+      action: config.action,
+      fraction: config.fraction,
+      isMarketOrder: line.includes('市價'),
+      note: text,
+    })
   }
+
+  return results
 }
 
 const round = (value, digits = 2) => {

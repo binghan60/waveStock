@@ -7,7 +7,7 @@ import sharp from 'sharp' // 記得要留著 sharp 用來壓縮
 import RecognizedStock from '../models/RecognizedStock.js'
 import TradeJournalEntry from '../models/TradeJournalEntry.js'
 import { fetchStockData } from '../services/stockService.js'
-import { parseTradeMessage } from '../services/tradeJournalService.js'
+import { parseTradeMessages } from '../services/tradeJournalService.js'
 import { fetchMorningMarketData } from '../services/finance/marketDataService.js'
 import { buildMorningBriefFlex } from '../services/finance/morningBriefFlex.js'
 
@@ -55,11 +55,11 @@ async function handleEvent(event, client) {
       }
       return client.replyMessage(event.replyToken, { type: 'text', text: replyText })
     }
-    const tradeEntry = await recordTradeMessage(event, client)
-    if (tradeEntry) {
+    const tradeEntries = await recordTradeMessage(event, client)
+    if (tradeEntries && tradeEntries.length > 0) {
       return client.replyMessage(event.replyToken, {
         type: 'text',
-        text: buildTradeRecordedReply(tradeEntry),
+        text: tradeEntries.map(buildTradeRecordedReply).join('\n\n'),
       })
     }
     // return client.replyMessage(event.replyToken, { type: 'text', text: event.message.text })
@@ -111,43 +111,48 @@ async function recordTradeMessage(event, client) {
     console.warn('Unable to load LINE sender profile:', error.message)
   }
 
-  const parsed = parseTradeMessage(event.message.text, { senderName })
-  if (!parsed) return null
+  const parsedList = parseTradeMessages(event.message.text, { senderName })
+  if (!parsedList || parsedList.length === 0) return null
 
-  let price = null
-  try {
-    const quotes = await fetchStockData(parsed.code)
-    const marketPrice = Number(quotes[0]?.currentPrice)
-    if (Number.isFinite(marketPrice) && marketPrice > 0) price = marketPrice
-  } catch (error) {
-    console.warn(`Unable to load market price for ${parsed.code}:`, error.message)
+  const entries = []
+
+  for (const parsed of parsedList) {
+    let price = null
+    try {
+      const quotes = await fetchStockData(parsed.code)
+      const marketPrice = Number(quotes[0]?.currentPrice)
+      if (Number.isFinite(marketPrice) && marketPrice > 0) price = marketPrice
+    } catch (error) {
+      console.warn(`Unable to load market price for ${parsed.code}:`, error.message)
+    }
+
+    try {
+      const entry = await TradeJournalEntry.create({
+        platform: 'line',
+        groupId: event.source.groupId || null,
+        roomId: event.source.roomId || null,
+        userId: event.source.userId || null,
+        senderName,
+        messageId: event.message.id || null,
+        code: parsed.code,
+        name: parsed.name,
+        tradeType: parsed.tradeType,
+        action: parsed.action,
+        fraction: parsed.fraction,
+        price,
+        priceSource: price ? 'market_snapshot' : 'unknown',
+        isMarketOrder: parsed.isMarketOrder,
+        rawText: event.message.text,
+        occurredAt: event.timestamp ? new Date(event.timestamp) : new Date(),
+      })
+      console.log(`Trade journal: ${entry.action} ${entry.code} @ ${entry.price || 'unknown'}`)
+      entries.push(entry)
+    } catch (error) {
+      if (error?.code !== 11000) throw error
+    }
   }
 
-  try {
-    const entry = await TradeJournalEntry.create({
-      platform: 'line',
-      groupId: event.source.groupId || null,
-      roomId: event.source.roomId || null,
-      userId: event.source.userId || null,
-      senderName,
-      messageId: event.message.id || null,
-      code: parsed.code,
-      name: parsed.name,
-      tradeType: parsed.tradeType,
-      action: parsed.action,
-      fraction: parsed.fraction,
-      price,
-      priceSource: price ? 'market_snapshot' : 'unknown',
-      isMarketOrder: parsed.isMarketOrder,
-      rawText: event.message.text,
-      occurredAt: event.timestamp ? new Date(event.timestamp) : new Date(),
-    })
-    console.log(`Trade journal: ${entry.action} ${entry.code} @ ${entry.price || 'unknown'}`)
-    return entry
-  } catch (error) {
-    if (error?.code === 11000) return null
-    throw error
-  }
+  return entries.length > 0 ? entries : null
 }
 
 // 👇 修改 handleImageMessage 裡的 API 設定

@@ -2,11 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   calculateTradePerformance,
-  parseTradeMessage,
+  parseTradeMessages,
 } from '../services/tradeJournalService.js'
 
 test('parses a market buy message', () => {
-  assert.deepEqual(parseTradeMessage('綸(菁英)_4\n富鼎(8261)市價買進'), {
+  assert.deepEqual(parseTradeMessages('綸(菁英)_4\n富鼎(8261)市價買進')[0], {
     code: '8261',
     name: '富鼎',
     tradeType: 'buy',
@@ -18,7 +18,7 @@ test('parses a market buy message', () => {
 })
 
 test('parses a half profit-taking message', () => {
-  assert.deepEqual(parseTradeMessage('綸(菁英)_5\n聯電(2303)市價獲利一半，剩餘部位續抱'), {
+  assert.deepEqual(parseTradeMessages('綸(菁英)_5\n聯電(2303)市價獲利一半，剩餘部位續抱')[0], {
     code: '2303',
     name: '聯電',
     tradeType: 'sell_half',
@@ -30,7 +30,7 @@ test('parses a half profit-taking message', () => {
 })
 
 test('parses a full exit message', () => {
-  assert.deepEqual(parseTradeMessage('綸(菁英)_3\n今國光(6209)剩餘部位全數出場'), {
+  assert.deepEqual(parseTradeMessages('綸(菁英)_3\n今國光(6209)剩餘部位全數出場')[0], {
     code: '6209',
     name: '今國光',
     tradeType: 'sell_all',
@@ -42,23 +42,35 @@ test('parses a full exit message', () => {
 })
 
 test('ignores unrelated stock discussion', () => {
-  assert.equal(parseTradeMessage('綸(菁英)_5\n聯電(2303)今天成交量很大'), null)
+  assert.deepEqual(parseTradeMessages('綸(菁英)_5\n聯電(2303)今天成交量很大'), [])
 })
 
 test('accepts LINE message when sender name contains the required marker', () => {
-  const parsed = parseTradeMessage('富鼎(8261)市價買進', {
+  const parsedList = parseTradeMessages('富鼎(8261)市價買進', {
     senderName: '綸(菁英)_4',
   })
 
-  assert.equal(parsed?.tradeType, 'buy')
-  assert.equal(parsed?.code, '8261')
+  assert.equal(parsedList.length, 1)
+  assert.equal(parsedList[0]?.tradeType, 'buy')
+  assert.equal(parsedList[0]?.code, '8261')
 })
 
 test('ignores trade-like messages from other senders', () => {
-  assert.equal(
-    parseTradeMessage('富鼎(8261)市價買進', { senderName: '其他老師' }),
-    null,
+  assert.deepEqual(
+    parseTradeMessages('富鼎(8261)市價買進', { senderName: '其他老師' }),
+    [],
   )
+})
+
+test('parses multiple trades from a single message (e.g. switch positions)', () => {
+  const text = `綸(菁英)_2\n 中磊(5388)市價賣出收回資金 \n將資金轉入聯茂(6213)`
+  const parsedList = parseTradeMessages(text)
+  
+  assert.equal(parsedList.length, 2)
+  assert.equal(parsedList[0].code, '5388')
+  assert.equal(parsedList[0].tradeType, 'sell_all')
+  assert.equal(parsedList[1].code, '6213')
+  assert.equal(parsedList[1].tradeType, 'buy')
 })
 
 test('closes the remaining position after half and full sell messages', () => {
