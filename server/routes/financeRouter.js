@@ -7,6 +7,8 @@ import {
 } from '../services/finance/marketDataService.js'
 import { buildMorningBriefFlex } from '../services/finance/morningBriefFlex.js'
 
+const PENDING_RETRY_MS = 2 * 60 * 1000
+
 export default function financeRoutes(config) {
   const router = express.Router()
   const client = new line.Client(config)
@@ -43,8 +45,10 @@ export default function financeRoutes(config) {
       }
 
       const failed = results.filter((result) => result.status === 'failed').length
-      return res.status(failed ? 207 : 200).json({
-        status: failed ? 'partial' : 'ok',
+      const pending = results.filter((result) => result.status === 'pending').length
+      const responseCode = failed ? 207 : pending ? 202 : 200
+      return res.status(responseCode).json({
+        status: failed ? 'partial' : pending ? 'pending' : 'ok',
         deliveryDate,
         marketCount: quotes.length,
         sourceErrors: errors,
@@ -82,6 +86,65 @@ function getRecipients(override) {
     .filter(Boolean)
 }
 
+function getPendingAgeMs(delivery) {
+  const lastTouchedAt = delivery?.updatedAt || delivery?.createdAt
+  if (!lastTouchedAt) return Number.POSITIVE_INFINITY
+  return Date.now() - new Date(lastTouchedAt).getTime()
+}
+
+function getLineErrorStatus(error) {
+  return (
+    error?.statusCode ||
+    error?.status ||
+    error?.response?.status ||
+    error?.response?.statusCode ||
+    error?.originalError?.response?.status ||
+    error?.originalError?.response?.statusCode ||
+    error?.cause?.response?.status ||
+    error?.cause?.response?.statusCode ||
+    null
+  )
+}
+
+function getLineErrorDetail(error) {
+  const candidates = [
+    error?.response?.data,
+    error?.response?.body,
+    error?.originalError?.response?.data,
+    error?.originalError?.response?.body,
+    error?.cause?.response?.data,
+    error?.cause?.response?.body,
+    error?.details,
+    error?.body,
+  ]
+  return candidates.find((value) => value !== undefined && value !== null && value !== '')
+}
+
+function stringifyErrorDetail(value) {
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function formatLinePushError(error) {
+  const parts = [error?.message || String(error)]
+  const status = getLineErrorStatus(error)
+  const detail = getLineErrorDetail(error)
+
+  if (status && !parts[0].includes(String(status))) {
+    parts.push(`status: ${status}`)
+  }
+
+  if (detail) {
+    parts.push(`LINE: ${stringifyErrorDetail(detail)}`)
+  }
+
+  return parts.join(' | ').slice(0, 4000)
+}
+
 async function deliverOnce({ client, recipientId, deliveryDate, message, force }) {
   const deliveryKey = `morning:${deliveryDate}:${recipientId}`
   let delivery
@@ -96,21 +159,42 @@ async function deliverOnce({ client, recipientId, deliveryDate, message, force }
           status: 'pending',
           error: '',
         },
+        $unset: {
+          sentAt: '',
+        },
       },
       { new: true, upsert: true },
     )
   } else {
     const existing = await MarketBriefDelivery.findOne({ deliveryKey })
-    if (existing?.status === 'sent' || existing?.status === 'pending') {
-      return { recipientId, status: 'skipped' }
+    if (existing?.status === 'sent') {
+      return { recipientId, status: 'skipped', reason: 'already_sent' }
+    }
+
+    if (existing?.status === 'pending') {
+      const pendingAgeMs = getPendingAgeMs(existing)
+      if (pendingAgeMs < PENDING_RETRY_MS) {
+        return {
+          recipientId,
+          status: 'pending',
+          reason: 'delivery_in_progress',
+          pendingAgeMs,
+        }
+      }
+
+      delivery = existing
+      delivery.error = ''
+      delivery.set('sentAt', undefined)
+      await delivery.save()
     }
 
     if (existing?.status === 'failed') {
       delivery = existing
       delivery.status = 'pending'
       delivery.error = ''
+      delivery.set('sentAt', undefined)
       await delivery.save()
-    } else {
+    } else if (!delivery) {
       try {
         delivery = await MarketBriefDelivery.create({
           deliveryKey,
@@ -118,7 +202,9 @@ async function deliverOnce({ client, recipientId, deliveryDate, message, force }
           deliveryDate,
         })
       } catch (error) {
-        if (error?.code === 11000) return { recipientId, status: 'skipped' }
+        if (error?.code === 11000) {
+          return { recipientId, status: 'pending', reason: 'delivery_race' }
+        }
         throw error
       }
     }
@@ -131,14 +217,16 @@ async function deliverOnce({ client, recipientId, deliveryDate, message, force }
     await delivery.save()
     return { recipientId, status: 'sent' }
   } catch (error) {
-    const lineDetail = error.response?.data
-    const errorMsg = lineDetail
-      ? `${error.message} | LINE: ${JSON.stringify(lineDetail)}`
-      : error.message
+    const errorMsg = formatLinePushError(error)
     console.error('pushMessage failed:', errorMsg)
     delivery.status = 'failed'
     delivery.error = errorMsg
     await delivery.save()
-    return { recipientId, status: 'failed', error: errorMsg }
+    return {
+      recipientId,
+      status: 'failed',
+      statusCode: getLineErrorStatus(error),
+      error: errorMsg,
+    }
   }
 }
