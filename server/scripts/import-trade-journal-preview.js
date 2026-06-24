@@ -24,13 +24,17 @@ const buildImportKey = (entry) => {
   return `line-history:${crypto.createHash('sha256').update(identity).digest('hex')}`
 }
 
+const normalizeName = (name) => String(name || '')
+  .replace(/^(?:將資金轉入|轉入|換股)/, '')
+  .trim()
+
 const toDocument = (entry) => {
   return {
     platform: 'line-history',
     senderName: entry.sender_name,
     importKey: buildImportKey(entry),
     code: entry.code,
-    name: entry.name,
+    name: normalizeName(entry.name),
     tradeType: entry.trade_type,
     action: entry.action,
     fraction: entry.fraction,
@@ -49,15 +53,38 @@ const toDocument = (entry) => {
   }
 }
 
+const getTaipeiDayRange = (date) => {
+  const taipeiDate = new Date(date.getTime() + 8 * 60 * 60 * 1000)
+  taipeiDate.setUTCHours(0, 0, 0, 0)
+  const start = new Date(taipeiDate.getTime() - 8 * 60 * 60 * 1000)
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000)
+  return { start, end }
+}
+
 const findExistingMessage = async (document) => {
   const minuteStart = new Date(document.occurredAt)
   minuteStart.setSeconds(0, 0)
   const minuteEnd = new Date(minuteStart.getTime() + 60_000)
-  return TradeJournalEntry.findOne({
+  const minuteMatch = await TradeJournalEntry.findOne({
     code: document.code,
     tradeType: document.tradeType,
     occurredAt: { $gte: minuteStart, $lt: minuteEnd },
   })
+  if (minuteMatch) return minuteMatch
+
+  const { start, end } = getTaipeiDayRange(document.occurredAt)
+  const sameDayMatches = await TradeJournalEntry.find({
+    code: document.code,
+    tradeType: document.tradeType,
+    action: document.action,
+    occurredAt: { $gte: start, $lt: end },
+  }).sort({ occurredAt: 1 })
+
+  return sameDayMatches.find((entry) => {
+    return !entry.importKey
+      || entry.platform !== 'line-history'
+      || entry.priceSource !== 'shioaji_tick'
+  }) || null
 }
 
 const main = async () => {

@@ -43,9 +43,12 @@ TRADE_PATTERNS = (
             r"|清倉"
         ),
     ),
-    ("buy", "buy", 1.0, re.compile(r"市價\s*買進")),
+    ("buy", "buy", 1.0, re.compile(r"市價\s*買進|轉入|換股")),
 )
 
+
+def normalize_stock_name(name: str) -> str:
+    return re.sub(r"^(?:將資金轉入|轉入|換股)", "", name).strip("-_. 　")
 
 @dataclass
 class TradeCandidate:
@@ -103,8 +106,9 @@ def parse_line_export(path: Path) -> list[TradeCandidate]:
                 continue
 
             for index, mention in enumerate(mentions):
+                segment_start = mentions[index - 1].end() if index > 0 else 0
                 segment_end = mentions[index + 1].start() if index + 1 < len(mentions) else len(line)
-                segment = line[mention.start():segment_end]
+                segment = line[segment_start:segment_end]
                 matched_trade = next(
                     (
                         (trade_type, action, fraction)
@@ -122,7 +126,7 @@ def parse_line_export(path: Path) -> list[TradeCandidate]:
                         occurred_at=f"{occurred_at.isoformat()}{TAIPEI_OFFSET}",
                         sender_name=current_sender,
                         code=mention.group("code"),
-                        name=mention.group("name").strip("-_."),
+                        name=normalize_stock_name(mention.group("name")),
                         trade_type=trade_type,
                         action=action,
                         fraction=fraction,
