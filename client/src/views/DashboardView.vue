@@ -1,11 +1,11 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import StockSection from '@/components/StockSection.vue'
 import StockSpectrumChart from '@/components/StockSpectrumChart.vue'
 import StockSpectrumCards from '@/components/StockSpectrumCards.vue'
 import { useStockStore } from '@/stores/stockStore'
-import { BarChart2, TrendingUp, Eye, EyeOff, Search, X } from 'lucide-vue-next'
+import { BarChart2, TrendingUp, Eye, EyeOff, Search, X, Pin, Sparkles, Star, ArrowUp } from 'lucide-vue-next'
 
 const stockStore = useStockStore()
 const {
@@ -104,12 +104,60 @@ const scrollToCard = (code) => {
   el.classList.add('card-highlight')
   setTimeout(() => el.classList.remove('card-highlight'), 1500)
 }
+
+const scrollToSection = (id) => {
+  const el = document.getElementById(id)
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+const showBackToTop = ref(false)
+const handleScroll = () => {
+  showBackToTop.value = window.scrollY > 300
+}
+const scrollToTop = () => {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+onMounted(() => window.addEventListener('scroll', handleScroll, { passive: true }))
+onUnmounted(() => window.removeEventListener('scroll', handleScroll))
+
+const quickNav = computed(() => [
+  { id: 'section-pinned', label: '釘選', icon: Pin, count: filteredPinnedStocks.value.length },
+  { id: 'section-recognized', label: '推薦', icon: Sparkles, count: filteredUnpinnedRecognizedStocks.value.length },
+  { id: 'section-manual', label: '自選', icon: Star, count: filteredUnpinnedStocks.value.length },
+])
 </script>
 
 <template>
   <div>
     <!-- Quick Add Section -->
     <div class="mb-2 flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 sm:items-center">
+      <!-- 快速跳轉 (釘選 / 推薦 / 自選) -->
+      <div class="flex justify-start gap-2 sm:mr-auto">
+        <button
+          v-for="nav in quickNav"
+          :key="nav.id"
+          @click="scrollToSection(nav.id)"
+          :disabled="nav.count === 0"
+          class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border cursor-pointer active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+          :class="
+            isStealth
+              ? 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
+              : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-600'
+          "
+          :title="`跳至${nav.label}`"
+        >
+          <component :is="nav.icon" class="w-3.5 h-3.5 shrink-0" />
+          <span>{{ nav.label }}</span>
+          <span
+            class="px-1.5 py-0.5 rounded text-[9px] font-mono"
+            :class="isStealth ? 'bg-slate-100 text-slate-500' : 'bg-zinc-800 text-zinc-500'"
+          >
+            {{ nav.count }}
+          </span>
+        </button>
+      </div>
+
       <!-- 上排 (手機) / 右側按鈕群 (桌面) -->
       <div class="flex justify-end gap-2 sm:contents">
         <!-- Spectrum Toggle -->
@@ -351,6 +399,7 @@ const scrollToCard = (code) => {
 
     <!-- 置頂區域 -->
     <StockSection
+      id="section-pinned"
       title="置頂監控"
       stealthTitle="PINNED_WATCHLIST"
       :stocks="filteredPinnedStocks"
@@ -367,6 +416,7 @@ const scrollToCard = (code) => {
 
     <!-- 圖片辨識區域 -->
     <StockSection
+      id="section-recognized"
       title="圖片辨識分析"
       stealthTitle="AI_ANALYTICS_DATA"
       :stocks="filteredUnpinnedRecognizedStocks"
@@ -384,6 +434,7 @@ const scrollToCard = (code) => {
 
     <!-- 個人自選區域 -->
     <StockSection
+      id="section-manual"
       title="個人自選清單"
       stealthTitle="USER_WATCHLIST_LOCAL"
       :stocks="filteredUnpinnedStocks"
@@ -396,6 +447,30 @@ const scrollToCard = (code) => {
       @togglePin="togglePin"
       @hideStock="toggleHideStock"
     />
+
+    <!-- 回到頂部 -->
+    <transition
+      enter-active-class="transition-all duration-200 ease-out"
+      leave-active-class="transition-all duration-150 ease-in"
+      enter-from-class="opacity-0 translate-y-2"
+      enter-to-class="opacity-100 translate-y-0"
+      leave-from-class="opacity-100 translate-y-0"
+      leave-to-class="opacity-0 translate-y-2"
+    >
+      <button
+        v-if="showBackToTop"
+        @click="scrollToTop"
+        class="fixed bottom-6 right-6 z-50 flex items-center justify-center w-11 h-11 rounded-full border shadow-lg transition-all active:scale-95 cursor-pointer"
+        :class="
+          isStealth
+            ? 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
+            : 'bg-zinc-900 border-zinc-700 text-zinc-300 hover:border-zinc-500'
+        "
+        title="回到頂部"
+      >
+        <ArrowUp class="w-5 h-5" />
+      </button>
+    </transition>
   </div>
 </template>
 
