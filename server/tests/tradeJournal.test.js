@@ -41,6 +41,17 @@ test('parses a full exit message', () => {
   })
 })
 
+test('parses a market profit-taking sell message', () => {
+  assert.deepEqual(parseTradeMessages('綸(菁英)_4\n聯鈞(3450) 市價獲利賣出')[0], {
+    code: '3450',
+    name: '聯鈞',
+    tradeType: 'sell_all',
+    action: 'sell',
+    fraction: 1,
+    isMarketOrder: true,
+    note: '綸(菁英)_4\n聯鈞(3450) 市價獲利賣出',
+  })
+})
 test('ignores unrelated stock discussion', () => {
   assert.deepEqual(parseTradeMessages('綸(菁英)_5\n聯電(2303)今天成交量很大'), [])
 })
