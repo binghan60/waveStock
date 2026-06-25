@@ -263,8 +263,13 @@ export const useStockStore = defineStore('stock', () => {
       }
       rawManualStocks.value.push(newStock)
       saveManualStocks()
+      // 手動新增後自動釘選
+      if (!pinnedList.value.includes(symbol)) {
+        pinnedList.value.push(symbol)
+        savePinnedList()
+      }
       await fetchData()
-      toast.success('已加入監控清單')
+      toast.success('已加入並釘選')
     } catch {
       toast.error('新增失敗')
     } finally {
