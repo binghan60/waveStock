@@ -55,6 +55,22 @@ test('builds a compact dark LINE Flex message', () => {
   assert.equal(getMarketMood(quotes).label, '盤勢偏多')
 })
 
+test('does not emit empty LINE text fields when night-session data is missing', () => {
+  const message = buildMorningBriefFlex([
+    {
+      symbol: '^DJI',
+      name: '道瓊',
+      market: '美國市場',
+      price: 51202.26,
+      change: 353.46,
+      changePercent: 0.7,
+      tradingDate: '2026-06-12',
+    },
+  ])
+
+  assertNoEmptyTextFields(message)
+  assert.equal(message.contents.body.contents[3].contents[1].text, '暫無資料')
+})
 test('uses a down arrow in alt text when night session falls', () => {
   const message = buildMorningBriefFlex([
     {
@@ -71,3 +87,16 @@ test('uses a down arrow in alt text when night session falls', () => {
 
   assert.equal(message.altText, '夜盤 ▼353.51點 ▼0.7%')
 })
+
+function assertNoEmptyTextFields(node) {
+  if (!node || typeof node !== 'object') return
+  if (node.type === 'text') {
+    assert.equal(typeof node.text, 'string')
+    assert.notEqual(node.text.trim(), '')
+  }
+
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) value.forEach(assertNoEmptyTextFields)
+    else assertNoEmptyTextFields(value)
+  }
+}

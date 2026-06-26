@@ -122,7 +122,7 @@ function marketSection(market, quotes) {
     ? `${formatShortDate(
         market === '台指期夜盤' ? first.sessionDate || first.tradingDate : first.tradingDate,
       )} ${market === '台指期夜盤' ? '夜盤' : '收盤'}`
-    : ''
+    : '暫無資料'
 
   return [
     { type: 'separator', margin: 'lg', color: COLORS.divider },
