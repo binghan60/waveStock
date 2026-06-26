@@ -1,7 +1,7 @@
 import express from 'express'
 import TradeJournalEntry from '../models/TradeJournalEntry.js'
 import { fetchStockData } from '../services/stockService.js'
-import { calculateTradePerformance, parseTradeMessages } from '../services/tradeJournalService.js'
+import { buildTradeEntryMessageId, calculateTradePerformance, parseTradeMessages } from '../services/tradeJournalService.js'
 
 const router = express.Router()
 router.use(express.json())
@@ -27,11 +27,12 @@ router.post('/entries', async (req, res) => {
     })
     if (!parsedList || parsedList.length === 0) return res.status(422).json({ error: '無法辨識股票交易訊息' })
 
-    const entries = await Promise.all(parsedList.map(async (parsed) => {
+    const entries = await Promise.all(parsedList.map(async (parsed, index) => {
       return await TradeJournalEntry.create({
         ...parsed,
         ...req.body,
         rawText: req.body.rawText || req.body.text,
+        messageId: buildTradeEntryMessageId(req.body.messageId, parsed, index, parsedList.length),
         priceSource: req.body.price ? 'manual' : 'unknown',
         occurredAt: req.body.occurredAt || new Date(),
       })

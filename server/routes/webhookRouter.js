@@ -7,7 +7,7 @@ import sharp from 'sharp' // 記得要留著 sharp 用來壓縮
 import RecognizedStock from '../models/RecognizedStock.js'
 import TradeJournalEntry from '../models/TradeJournalEntry.js'
 import { fetchStockData } from '../services/stockService.js'
-import { parseTradeMessages } from '../services/tradeJournalService.js'
+import { buildTradeEntryMessageId, parseTradeMessages } from '../services/tradeJournalService.js'
 import { fetchMorningMarketData } from '../services/finance/marketDataService.js'
 import { buildMorningBriefFlex } from '../services/finance/morningBriefFlex.js'
 
@@ -116,7 +116,7 @@ async function recordTradeMessage(event, client) {
 
   const entries = []
 
-  for (const parsed of parsedList) {
+  for (const [index, parsed] of parsedList.entries()) {
     let price = null
     try {
       const quotes = await fetchStockData(parsed.code)
@@ -133,7 +133,7 @@ async function recordTradeMessage(event, client) {
         roomId: event.source.roomId || null,
         userId: event.source.userId || null,
         senderName,
-        messageId: event.message.id || null,
+        messageId: buildTradeEntryMessageId(event.message.id, parsed, index, parsedList.length),
         code: parsed.code,
         name: parsed.name,
         tradeType: parsed.tradeType,

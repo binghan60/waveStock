@@ -10,7 +10,7 @@ const TRADE_TYPES = {
     fraction: 0.5,
   },
   sell_all: {
-    pattern: /(?:剩餘部位|市價)?(?:全數|全部)(?:獲利|小賺|賣出)*(?:出場|賣出)|全賣|清倉|市價(?:獲利)?賣出(?!\s*一半)|收回資金/,
+    pattern: /(?:剩餘部位|市價)?(?:全數|全部)(?:獲利|小賺|賣出)*(?:出場|賣出)|全賣|清倉|市價(?:獲利)?賣出(?!\s*一半)|(?:市價\s*)?(?:獲利\s*)?出清|收回資金/,
     action: 'sell',
     fraction: 1,
   },
@@ -20,6 +20,16 @@ const REQUIRED_SENDER_MARKER = '綸(菁英)'
 const BROKER_FEE_RATE = 0.001425 * 0.6
 const SELL_TAX_RATE = 0.003
 const SELL_COST_RATE = BROKER_FEE_RATE + SELL_TAX_RATE
+
+export function buildTradeEntryMessageId(baseMessageId, parsedTrade, index = 0, total = 1) {
+  const messageId = String(baseMessageId || '').trim()
+  if (!messageId) return null
+  if (total <= 1) return messageId
+
+  const code = parsedTrade?.code || 'unknown'
+  const tradeType = parsedTrade?.tradeType || 'trade'
+  return `${messageId}:${index + 1}:${code}:${tradeType}`
+}
 
 export function parseTradeMessages(rawText, { senderName = '' } = {}) {
   const text = String(rawText || '').trim()

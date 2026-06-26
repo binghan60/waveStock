@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  buildTradeEntryMessageId,
   calculateTradePerformance,
   parseTradeMessages,
 } from '../services/tradeJournalService.js'
@@ -52,6 +53,20 @@ test('parses a market profit-taking sell message', () => {
     note: '綸(菁英)_4\n聯鈞(3450) 市價獲利賣出',
   })
 })
+
+test('parses multiple full-exit trades from one message', () => {
+  const text = '綸(菁英)_4\n 聯茂(6213) 市價獲利出清 \n順德(2351) 市價出清收回資金'
+  const parsedList = parseTradeMessages(text)
+
+  assert.equal(parsedList.length, 2)
+  assert.equal(parsedList[0].code, '6213')
+  assert.equal(parsedList[0].tradeType, 'sell_all')
+  assert.equal(parsedList[0].isMarketOrder, true)
+  assert.equal(parsedList[1].code, '2351')
+  assert.equal(parsedList[1].tradeType, 'sell_all')
+  assert.equal(parsedList[1].isMarketOrder, true)
+})
+
 test('ignores unrelated stock discussion', () => {
   assert.deepEqual(parseTradeMessages('綸(菁英)_5\n聯電(2303)今天成交量很大'), [])
 })
@@ -82,6 +97,21 @@ test('parses multiple trades from a single message (e.g. switch positions)', () 
   assert.equal(parsedList[0].tradeType, 'sell_all')
   assert.equal(parsedList[1].code, '6213')
   assert.equal(parsedList[1].tradeType, 'buy')
+})
+
+test('builds stable child message ids for multi-trade LINE messages', () => {
+  assert.equal(
+    buildTradeEntryMessageId('line-message-1', { code: '6213', tradeType: 'sell_all' }, 0, 2),
+    'line-message-1:1:6213:sell_all',
+  )
+  assert.equal(
+    buildTradeEntryMessageId('line-message-1', { code: '2351', tradeType: 'sell_all' }, 1, 2),
+    'line-message-1:2:2351:sell_all',
+  )
+  assert.equal(
+    buildTradeEntryMessageId('line-message-2', { code: '8261', tradeType: 'buy' }, 0, 1),
+    'line-message-2',
+  )
 })
 
 test('closes the remaining position after half and full sell messages', () => {
