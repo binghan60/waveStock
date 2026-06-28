@@ -136,29 +136,26 @@ function buildTradeRecordedFlexBubble(entry) {
   }
   const action = tradeTypeLabels[entry.tradeType] || entry.tradeType
   const isBuy = entry.action === 'buy'
-  const accentColor = isBuy ? '#34C759' : '#FF3B30'
+  const accentColor = isBuy ? '#5BA882' : '#B36B6B'
+  const headerBg = isBuy ? '#1A3328' : '#3D1A1A'
   const price = Number(entry.price)
   const priceText = Number.isFinite(price) && price > 0
     ? `${price.toLocaleString('zh-TW', { maximumFractionDigits: 2 })} 元`
     : '尚未取得'
-  const senderName = entry.senderName || 'Allen'
 
   return {
     type: 'bubble',
     size: 'kilo',
+    styles: {
+      header: { backgroundColor: headerBg },
+      body: { backgroundColor: '#1C1C1E' },
+    },
     header: {
       type: 'box',
       layout: 'vertical',
-      backgroundColor: accentColor,
       paddingAll: '10px',
       contents: [
-        {
-          type: 'text',
-          text: '已記錄交易',
-          color: '#ffffff',
-          size: 'xs',
-          weight: 'bold',
-        },
+        { type: 'text', text: '已記錄交易', color: '#FFFFFF99', size: 'xs', weight: 'bold' },
       ],
     },
     body: {
@@ -171,50 +168,18 @@ function buildTradeRecordedFlexBubble(entry) {
           type: 'box',
           layout: 'horizontal',
           contents: [
-            {
-              type: 'text',
-              text: `${entry.name}`,
-              weight: 'bold',
-              size: 'lg',
-              flex: 1,
-            },
-            {
-              type: 'text',
-              text: entry.code,
-              size: 'sm',
-              color: '#888888',
-              align: 'end',
-              gravity: 'bottom',
-              flex: 0,
-            },
+            { type: 'text', text: entry.name, weight: 'bold', size: 'lg', flex: 1, color: '#F2F2F7' },
+            { type: 'text', text: entry.code, size: 'sm', color: '#636366', align: 'end', gravity: 'bottom', flex: 0 },
           ],
         },
-        {
-          type: 'text',
-          text: action,
-          size: 'md',
-          color: accentColor,
-          weight: 'bold',
-        },
-        {
-          type: 'separator',
-          margin: 'sm',
-        },
-        {
-          type: 'box',
-          layout: 'horizontal',
-          margin: 'sm',
-          contents: [
-            { type: 'text', text: '紀錄人', color: '#888888', size: 'sm', flex: 2 },
-            { type: 'text', text: senderName, size: 'sm', align: 'end', flex: 3 },
-          ],
-        },
+        { type: 'text', text: action, size: 'md', color: accentColor, weight: 'bold' },
+        { type: 'separator', margin: 'sm', color: '#3A3A3C' },
         {
           type: 'box',
           layout: 'horizontal',
           contents: [
-            { type: 'text', text: '紀錄價格', color: '#888888', size: 'sm', flex: 2 },
-            { type: 'text', text: priceText, size: 'sm', align: 'end', flex: 3, weight: 'bold' },
+            { type: 'text', text: '紀錄價格', color: '#8E8E93', size: 'sm', flex: 2 },
+            { type: 'text', text: priceText, size: 'sm', align: 'end', flex: 3, weight: 'bold', color: '#F2F2F7' },
           ],
         },
       ],

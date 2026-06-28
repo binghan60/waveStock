@@ -145,7 +145,8 @@ export function buildOrderIntentLineMessage(intent) {
   const side = actionLabels[intent.action] || intent.action
   const tradeType = tradeTypeLabels[intent.tradeType] || intent.tradeType
   const isBuy = intent.action === 'buy'
-  const accentColor = isBuy ? '#34C759' : '#FF3B30'
+  const accentColor = isBuy ? '#5BA882' : '#B36B6B'
+  const headerBg = isBuy ? '#1A3328' : '#3D1A1A'
 
   const price = Number(intent.referencePrice)
   const priceText = Number.isFinite(price) && price > 0 ? `${round(price)} 元` : '尚無參考價'
@@ -159,8 +160,8 @@ export function buildOrderIntentLineMessage(intent) {
     type: 'box',
     layout: 'horizontal',
     contents: [
-      { type: 'text', text: label, color: '#888888', size: 'sm', flex: 3 },
-      { type: 'text', text: value, size: 'sm', align: 'end', flex: 4, weight: bold ? 'bold' : 'regular', wrap: true },
+      { type: 'text', text: label, color: '#8E8E93', size: 'sm', flex: 3 },
+      { type: 'text', text: value, size: 'sm', align: 'end', flex: 4, weight: bold ? 'bold' : 'regular', color: '#F2F2F7', wrap: true },
     ],
   })
 
@@ -169,8 +170,8 @@ export function buildOrderIntentLineMessage(intent) {
       type: 'box',
       layout: 'horizontal',
       contents: [
-        { type: 'text', text: intent.name, weight: 'bold', size: 'lg', flex: 1 },
-        { type: 'text', text: intent.code, size: 'sm', color: '#888888', align: 'end', gravity: 'bottom', flex: 0 },
+        { type: 'text', text: intent.name, weight: 'bold', size: 'lg', flex: 1, color: '#F2F2F7' },
+        { type: 'text', text: intent.code, size: 'sm', color: '#636366', align: 'end', gravity: 'bottom', flex: 0 },
       ],
     },
     {
@@ -180,7 +181,7 @@ export function buildOrderIntentLineMessage(intent) {
       color: accentColor,
       weight: 'bold',
     },
-    { type: 'separator', margin: 'sm' },
+    { type: 'separator', margin: 'sm', color: '#3A3A3C' },
     row('委託方式', intent.isMarketOrder ? '市價' : '未指定'),
     row('建議股數', quantityText, true),
     row('建議金額', amountText),
@@ -193,8 +194,8 @@ export function buildOrderIntentLineMessage(intent) {
       layout: 'horizontal',
       margin: 'sm',
       contents: [
-        { type: 'text', text: '⚠️ 風控', color: '#FF9500', size: 'sm', flex: 3 },
-        { type: 'text', text: intent.warnings.join(', '), size: 'sm', color: '#FF9500', align: 'end', flex: 4, wrap: true },
+        { type: 'text', text: '⚠️ 風控', color: '#C47F2A', size: 'sm', flex: 3 },
+        { type: 'text', text: intent.warnings.join(', '), size: 'sm', color: '#C47F2A', align: 'end', flex: 4, wrap: true },
       ],
     })
   }
@@ -205,13 +206,17 @@ export function buildOrderIntentLineMessage(intent) {
     contents: {
       type: 'bubble',
       size: 'kilo',
+      styles: {
+        header: { backgroundColor: headerBg },
+        body: { backgroundColor: '#1C1C1E' },
+        footer: { backgroundColor: '#2C2C2E', separator: true, separatorColor: '#3A3A3C' },
+      },
       header: {
         type: 'box',
         layout: 'vertical',
-        backgroundColor: accentColor,
         paddingAll: '10px',
         contents: [
-          { type: 'text', text: '跟單確認單', color: '#ffffff', size: 'xs', weight: 'bold' },
+          { type: 'text', text: '跟單確認單', color: '#FFFFFF99', size: 'xs', weight: 'bold' },
         ],
       },
       body: {
@@ -225,6 +230,7 @@ export function buildOrderIntentLineMessage(intent) {
         type: 'box',
         layout: 'horizontal',
         spacing: 'sm',
+        paddingAll: '12px',
         contents: [
           {
             type: 'button',
@@ -240,7 +246,8 @@ export function buildOrderIntentLineMessage(intent) {
           },
           {
             type: 'button',
-            style: 'secondary',
+            style: 'primary',
+            color: '#48484A',
             height: 'sm',
             action: {
               type: 'postback',
