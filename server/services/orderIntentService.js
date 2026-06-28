@@ -148,7 +148,6 @@ export function buildOrderIntentLineMessage(intent) {
     altText: `${intent.name}(${intent.code}) 跟單確認單`,
     template: {
       type: 'buttons',
-      title: `${intent.name}(${intent.code})`,
       text: text.slice(0, 160),
       actions: [
         {

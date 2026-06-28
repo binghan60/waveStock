@@ -67,9 +67,12 @@ async function handleEvent(event, client) {
     }
     const tradeResult = await recordTradeMessage(event, client)
     if (tradeResult?.entries?.length > 0) {
-      const confirmationText = tradeResult.intents?.length
-        ? `\n\n已建立 ${tradeResult.intents.length} 張跟單確認單，並推播給你確認。`
-        : ''
+      let confirmationText = ''
+      if (tradeResult.intents?.length) {
+        confirmationText = tradeResult.pushSucceeded
+          ? `\n\n已建立 ${tradeResult.intents.length} 張跟單確認單，並推播給你確認。`
+          : `\n\n已建立 ${tradeResult.intents.length} 張跟單確認單，但推播失敗（請確認 ORDER_CONFIRM_LINE_USER_ID 設定是否正確）。`
+      }
       return client.replyMessage(event.replyToken, {
         type: 'text',
         text: `${tradeResult.entries.map(buildTradeRecordedReply).join('\n\n')}${confirmationText}`,
@@ -162,6 +165,7 @@ async function recordTradeMessage(event, client) {
 
   const entries = []
   const intents = []
+  let pushSucceeded = false
 
   for (const [index, parsed] of parsedList.entries()) {
     let price = null
@@ -204,7 +208,9 @@ async function recordTradeMessage(event, client) {
         total: parsedList.length,
       })
       intents.push(intent)
-      await pushOrderIntentConfirmation(client, intent)
+      const pushResult = await pushOrderIntentConfirmation(client, intent)
+      if (pushResult.pushed) pushSucceeded = true
+      else console.warn(`Order intent push failed for ${intent._id}:`, pushResult.error || pushResult.results)
     } catch (error) {
       if (error?.code !== 11000) throw error
       const messageId = buildTradeEntryMessageId(event.message.id, parsed, index, parsedList.length)
@@ -218,12 +224,14 @@ async function recordTradeMessage(event, client) {
           total: parsedList.length,
         })
         intents.push(intent)
-        await pushOrderIntentConfirmation(client, intent)
+        const pushResult = await pushOrderIntentConfirmation(client, intent)
+        if (pushResult.pushed) pushSucceeded = true
+        else console.warn(`Order intent push failed for ${intent._id}:`, pushResult.error || pushResult.results)
       }
     }
   }
 
-  return entries.length > 0 || intents.length > 0 ? { entries, intents } : null
+  return entries.length > 0 || intents.length > 0 ? { entries, intents, pushSucceeded } : null
 }
 
 // 👇 修改 handleImageMessage 裡的 API 設定
