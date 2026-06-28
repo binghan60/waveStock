@@ -5,6 +5,7 @@ import apiRoutes from './routes/apiRouter.js'
 import webhookRoutes from './routes/webhookRouter.js'
 import financeRoutes from './routes/financeRouter.js'
 import tradeJournalRoutes from './routes/tradeJournalRouter.js'
+import orderIntentRoutes from './routes/orderIntentRouter.js'
 import 'dotenv/config'
 import mongoose from 'mongoose'
 
@@ -29,6 +30,7 @@ app.use(cors())
 
 app.use('/api', apiRoutes)
 app.use('/api/trade-journal', tradeJournalRoutes)
+app.use('/api/order-intents', orderIntentRoutes)
 
 const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,

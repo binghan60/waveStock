@@ -3,6 +3,7 @@ import DashboardView from '../views/DashboardView.vue'
 import ResultsView from '../views/ResultsView.vue'
 import BacktestView from '../views/BacktestView.vue'
 import TradeJournalView from '../views/TradeJournalView.vue'
+import OrderIntentsView from '../views/OrderIntentsView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -30,6 +31,11 @@ const router = createRouter({
       path: '/trade-journal',
       name: 'trade-journal',
       component: TradeJournalView
+    },
+    {
+      path: '/order-intents',
+      name: 'order-intents',
+      component: OrderIntentsView
     }
   ],
 })

@@ -1,0 +1,253 @@
+import axios from 'axios'
+import OrderIntent from '../models/OrderIntent.js'
+import TradeJournalEntry from '../models/TradeJournalEntry.js'
+import { calculateTradePerformance } from './tradeJournalService.js'
+
+export const CONFIRM_LINE_USER_ID = process.env.ORDER_CONFIRM_LINE_USER_ID || ''
+const DEFAULT_BUY_AMOUNT = Number(process.env.ORDER_INTENT_BUY_AMOUNT_TWD) || 100_000
+const BROKER_ORDER_API_URL = process.env.BROKER_ORDER_API_URL || ''
+const BROKER_ORDER_DRY_RUN = process.env.BROKER_ORDER_DRY_RUN !== 'false'
+
+const tradeTypeLabels = {
+  buy: '買進',
+  sell_half: '賣出一半',
+  sell_all: '出清',
+}
+
+const actionLabels = {
+  buy: '買進',
+  sell: '賣出',
+}
+
+const round = (value, digits = 2) => {
+  if (!Number.isFinite(value)) return null
+  const factor = 10 ** digits
+  return Math.round(value * factor) / factor
+}
+
+const floorQuantity = (value) => {
+  if (!Number.isFinite(value) || value <= 0) return null
+  return Math.floor(value)
+}
+
+const getOpenPosition = async (code, excludeEntryId = null) => {
+  const entries = await TradeJournalEntry.find({ performanceEligible: { $ne: false } })
+    .sort({ occurredAt: 1 })
+    .lean()
+  const filteredEntries = excludeEntryId
+    ? entries.filter((entry) => String(entry._id) !== String(excludeEntryId))
+    : entries
+  const performance = calculateTradePerformance(filteredEntries, {})
+  return performance.positions.find((position) => {
+    return position.code === code && position.status === 'open'
+  }) || null
+}
+
+export const buildOrderIntentSourceKey = (messageId, parsedTrade, index = 0, total = 1) => {
+  const base = String(messageId || '').trim() || `manual:${Date.now()}`
+  const code = parsedTrade?.code || 'unknown'
+  const tradeType = parsedTrade?.tradeType || 'trade'
+  return total <= 1 ? `${base}:${code}:${tradeType}` : `${base}:${index + 1}:${code}:${tradeType}`
+}
+
+export async function buildOrderIntentDraft({ event, parsed, entry, index = 0, total = 1 }) {
+  const referencePrice = Number(entry?.price)
+  const warnings = []
+  let suggestedAmount = null
+  let suggestedQuantity = null
+
+  if (parsed.action === 'buy') {
+    suggestedAmount = DEFAULT_BUY_AMOUNT
+    if (Number.isFinite(referencePrice) && referencePrice > 0) {
+      suggestedQuantity = floorQuantity(DEFAULT_BUY_AMOUNT / referencePrice)
+    } else {
+      warnings.push('missing_reference_price')
+    }
+
+    const openPosition = await getOpenPosition(parsed.code, entry?._id)
+    if (openPosition) warnings.push('already_has_open_position')
+  } else {
+    const openPosition = await getOpenPosition(parsed.code, entry?._id)
+    if (!openPosition || Number(openPosition.quantity) <= 0) {
+      warnings.push('no_open_position')
+    } else {
+      const fraction = parsed.tradeType === 'sell_half' ? 0.5 : 1
+      suggestedQuantity = floorQuantity(Number(openPosition.quantity) * fraction)
+      if (!suggestedQuantity) warnings.push('suggested_quantity_is_zero')
+    }
+  }
+
+  const sourceMessageId = event?.message?.id || entry?.messageId || `manual-${Date.now()}`
+  const occurredAt = event?.timestamp ? new Date(event.timestamp) : (entry?.occurredAt || new Date())
+
+  return {
+    source: 'line',
+    sourceMessageId,
+    sourceKey: buildOrderIntentSourceKey(sourceMessageId, parsed, index, total),
+    tradeJournalEntryId: entry?._id || null,
+    groupId: event?.source?.groupId || entry?.groupId || null,
+    roomId: event?.source?.roomId || entry?.roomId || null,
+    userId: event?.source?.userId || entry?.userId || null,
+    senderName: entry?.senderName || null,
+    code: parsed.code,
+    name: parsed.name,
+    tradeType: parsed.tradeType,
+    action: parsed.action,
+    fraction: parsed.fraction,
+    isMarketOrder: parsed.isMarketOrder,
+    suggestedAmount,
+    suggestedQuantity,
+    referencePrice: Number.isFinite(referencePrice) && referencePrice > 0 ? referencePrice : null,
+    priceSource: entry?.priceSource || 'unknown',
+    warnings,
+    rawText: event?.message?.text || entry?.rawText || parsed.note,
+    occurredAt,
+    status: 'pending_confirm',
+  }
+}
+
+export async function createOrderIntentFromTrade({ event, parsed, entry, index = 0, total = 1 }) {
+  const draft = await buildOrderIntentDraft({ event, parsed, entry, index, total })
+  const existing = await OrderIntent.findOne({ sourceKey: draft.sourceKey })
+  if (existing) return existing
+  return await OrderIntent.create(draft)
+}
+
+export function buildOrderIntentText(intent) {
+  const side = actionLabels[intent.action] || intent.action
+  const tradeType = tradeTypeLabels[intent.tradeType] || intent.tradeType
+  const price = Number(intent.referencePrice)
+  const priceText = Number.isFinite(price) && price > 0 ? `${round(price)} 元` : '尚無參考價'
+  const quantity = Number(intent.suggestedQuantity)
+  const quantityText = Number.isFinite(quantity) && quantity > 0 ? `${quantity.toLocaleString('zh-TW')} 股` : '待確認'
+  const amount = Number(intent.suggestedAmount)
+  const amountText = Number.isFinite(amount) && amount > 0 ? `約 ${amount.toLocaleString('zh-TW')} 元` : '依庫存計算'
+  const warningText = intent.warnings?.length ? intent.warnings.join(', ') : '無'
+
+  return [
+    '跟單確認單',
+    `${intent.name}(${intent.code}) ${tradeType}`,
+    `方向\uff1a${side}`,
+    `委託\uff1a${intent.isMarketOrder ? '市價' : '未指定'}`,
+    `建議股數\uff1a${quantityText}`,
+    `建議金額\uff1a${amountText}`,
+    `參考價\uff1a${priceText}`,
+    `風控提示\uff1a${warningText}`,
+  ].join('\n')
+}
+
+export function buildOrderIntentLineMessage(intent) {
+  const text = buildOrderIntentText(intent)
+  return {
+    type: 'template',
+    altText: `${intent.name}(${intent.code}) 跟單確認單`,
+    template: {
+      type: 'buttons',
+      title: `${intent.name}(${intent.code})`,
+      text: text.slice(0, 160),
+      actions: [
+        {
+          type: 'postback',
+          label: '確認跟單',
+          data: `action=confirm_order_intent&id=${intent._id}`,
+          displayText: `確認跟單 ${intent.code}`,
+        },
+        {
+          type: 'postback',
+          label: '拒絕',
+          data: `action=reject_order_intent&id=${intent._id}`,
+          displayText: `拒絕跟單 ${intent.code}`,
+        },
+      ],
+    },
+  }
+}
+
+export async function pushOrderIntentConfirmation(client, intent, userId = CONFIRM_LINE_USER_ID) {
+  if (!client || !userId) return null
+  try {
+    await client.pushMessage(userId, buildOrderIntentLineMessage(intent))
+    return { pushed: true, userId }
+  } catch (error) {
+    console.warn(`Unable to push order intent ${intent._id}:`, error.message)
+    return { pushed: false, userId, error: error.message }
+  }
+}
+
+const submitToBroker = async (intent) => {
+  const payload = {
+    clientOrderId: String(intent._id),
+    code: intent.code,
+    side: intent.action,
+    tradeType: intent.tradeType,
+    orderType: intent.isMarketOrder ? 'market' : 'unknown',
+    quantity: intent.suggestedQuantity,
+    amount: intent.suggestedAmount,
+    source: 'teacher-follow',
+    dryRun: BROKER_ORDER_DRY_RUN,
+  }
+
+  if (!BROKER_ORDER_API_URL) {
+    return {
+      payload,
+      response: {
+        brokerOrderId: `paper-${intent._id}`,
+        status: 'submitted',
+        message: 'paper order accepted; BROKER_ORDER_API_URL is not configured',
+      },
+      brokerService: 'paper',
+    }
+  }
+
+  const { data } = await axios.post(BROKER_ORDER_API_URL, payload, { timeout: 10_000 })
+  return { payload, response: data, brokerService: 'python-broker' }
+}
+
+export async function confirmOrderIntent(id) {
+  const intent = await OrderIntent.findById(id)
+  if (!intent) throw Object.assign(new Error('order_intent_not_found'), { statusCode: 404 })
+  if (intent.status !== 'pending_confirm') {
+    throw Object.assign(new Error(`order_intent_not_pending:${intent.status}`), { statusCode: 409 })
+  }
+  if (!Number(intent.suggestedQuantity) || Number(intent.suggestedQuantity) <= 0) {
+    throw Object.assign(new Error('suggested_quantity_required'), { statusCode: 422 })
+  }
+
+  intent.status = 'approved'
+  intent.confirmedAt = new Date()
+  await intent.save()
+
+  try {
+    const brokerResult = await submitToBroker(intent)
+    intent.status = 'submitted'
+    intent.submittedAt = new Date()
+    intent.brokerService = brokerResult.brokerService
+    intent.brokerOrderId = brokerResult.response?.brokerOrderId || null
+    intent.brokerStatus = brokerResult.response?.status || 'submitted'
+    intent.brokerMessage = brokerResult.response?.message || null
+    intent.submitPayload = brokerResult.payload
+    intent.submitResponse = brokerResult.response
+    await intent.save()
+    return intent
+  } catch (error) {
+    intent.status = 'failed'
+    intent.brokerStatus = 'failed'
+    intent.brokerMessage = error.message
+    await intent.save()
+    throw error
+  }
+}
+
+export async function rejectOrderIntent(id) {
+  const intent = await OrderIntent.findById(id)
+  if (!intent) throw Object.assign(new Error('order_intent_not_found'), { statusCode: 404 })
+  if (intent.status !== 'pending_confirm') {
+    throw Object.assign(new Error(`order_intent_not_pending:${intent.status}`), { statusCode: 409 })
+  }
+  intent.status = 'rejected'
+  intent.rejectedAt = new Date()
+  await intent.save()
+  return intent
+}
+
+export { tradeTypeLabels }

@@ -10,6 +10,12 @@ import { fetchStockData } from '../services/stockService.js'
 import { buildTradeEntryMessageId, parseTradeMessages } from '../services/tradeJournalService.js'
 import { fetchMorningMarketData } from '../services/finance/marketDataService.js'
 import { buildMorningBriefFlex } from '../services/finance/morningBriefFlex.js'
+import {
+  confirmOrderIntent,
+  createOrderIntentFromTrade,
+  pushOrderIntentConfirmation,
+  rejectOrderIntent,
+} from '../services/orderIntentService.js'
 
 const OCR_API_KEY = process.env.OCR_API_KEY
 
@@ -32,6 +38,10 @@ export default (config) => {
 }
 
 async function handleEvent(event, client) {
+  if (event.type === 'postback') {
+    return handlePostbackEvent(event, client)
+  }
+
   if (event.type === 'message' && event.message.type === 'text') {
     if (['盤前早報', '盤前快報'].includes(event.message.text.trim())) {
       const { quotes } = await fetchMorningMarketData()
@@ -55,11 +65,14 @@ async function handleEvent(event, client) {
       }
       return client.replyMessage(event.replyToken, { type: 'text', text: replyText })
     }
-    const tradeEntries = await recordTradeMessage(event, client)
-    if (tradeEntries && tradeEntries.length > 0) {
+    const tradeResult = await recordTradeMessage(event, client)
+    if (tradeResult?.entries?.length > 0) {
+      const confirmationText = tradeResult.intents?.length
+        ? `\n\n已建立 ${tradeResult.intents.length} 張跟單確認單，並推播給你確認。`
+        : ''
       return client.replyMessage(event.replyToken, {
         type: 'text',
-        text: tradeEntries.map(buildTradeRecordedReply).join('\n\n'),
+        text: `${tradeResult.entries.map(buildTradeRecordedReply).join('\n\n')}${confirmationText}`,
       })
     }
     // return client.replyMessage(event.replyToken, { type: 'text', text: event.message.text })
@@ -71,6 +84,39 @@ async function handleEvent(event, client) {
 
   if (event.type === 'join' || event.type === 'follow') {
     return client.replyMessage(event.replyToken, { type: 'text', text: '🎉 歡迎使用！' })
+  }
+
+  return Promise.resolve(null)
+}
+
+
+async function handlePostbackEvent(event, client) {
+  const params = new URLSearchParams(event.postback?.data || '')
+  const action = params.get('action')
+  const id = params.get('id')
+  if (!id) return Promise.resolve(null)
+
+  try {
+    if (action === 'confirm_order_intent') {
+      const intent = await confirmOrderIntent(id)
+      return client.replyMessage(event.replyToken, {
+        type: 'text',
+        text: `已確認跟單並送出\uff1a${intent.name}(${intent.code}) ${intent.brokerStatus || intent.status}`,
+      })
+    }
+
+    if (action === 'reject_order_intent') {
+      const intent = await rejectOrderIntent(id)
+      return client.replyMessage(event.replyToken, {
+        type: 'text',
+        text: `已拒絕跟單\uff1a${intent.name}(${intent.code})`,
+      })
+    }
+  } catch (error) {
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: `跟單確認失敗\uff1a${error.message}`,
+    })
   }
 
   return Promise.resolve(null)
@@ -115,6 +161,7 @@ async function recordTradeMessage(event, client) {
   if (!parsedList || parsedList.length === 0) return null
 
   const entries = []
+  const intents = []
 
   for (const [index, parsed] of parsedList.entries()) {
     let price = null
@@ -127,13 +174,14 @@ async function recordTradeMessage(event, client) {
     }
 
     try {
-      const entry = await TradeJournalEntry.create({
+      const messageId = buildTradeEntryMessageId(event.message.id, parsed, index, parsedList.length)
+      let entry = await TradeJournalEntry.create({
         platform: 'line',
         groupId: event.source.groupId || null,
         roomId: event.source.roomId || null,
         userId: event.source.userId || null,
         senderName,
-        messageId: buildTradeEntryMessageId(event.message.id, parsed, index, parsedList.length),
+        messageId,
         code: parsed.code,
         name: parsed.name,
         tradeType: parsed.tradeType,
@@ -147,12 +195,35 @@ async function recordTradeMessage(event, client) {
       })
       console.log(`Trade journal: ${entry.action} ${entry.code} @ ${entry.price || 'unknown'}`)
       entries.push(entry)
+
+      const intent = await createOrderIntentFromTrade({
+        event,
+        parsed,
+        entry,
+        index,
+        total: parsedList.length,
+      })
+      intents.push(intent)
+      await pushOrderIntentConfirmation(client, intent)
     } catch (error) {
       if (error?.code !== 11000) throw error
+      const messageId = buildTradeEntryMessageId(event.message.id, parsed, index, parsedList.length)
+      const entry = await TradeJournalEntry.findOne({ platform: 'line', messageId })
+      if (entry) {
+        const intent = await createOrderIntentFromTrade({
+          event,
+          parsed,
+          entry,
+          index,
+          total: parsedList.length,
+        })
+        intents.push(intent)
+        await pushOrderIntentConfirmation(client, intent)
+      }
     }
   }
 
-  return entries.length > 0 ? entries : null
+  return entries.length > 0 || intents.length > 0 ? { entries, intents } : null
 }
 
 // 👇 修改 handleImageMessage 裡的 API 設定

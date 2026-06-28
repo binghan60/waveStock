@@ -72,4 +72,21 @@ export default {
   getTradeJournalPerformance(params) {
     return apiClient.get('/trade-journal/performance', { params })
   },
+
+  getOrderIntents(params) {
+    return apiClient.get('/order-intents', { params })
+  },
+
+  createOrderIntentsFromMessage(data) {
+    return apiClient.post('/order-intents/from-message', data)
+  },
+
+  confirmOrderIntent(id) {
+    return apiClient.post(`/order-intents/${id}/confirm`)
+  },
+
+  rejectOrderIntent(id) {
+    return apiClient.post(`/order-intents/${id}/reject`)
+  },
+
 }
