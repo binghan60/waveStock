@@ -4,6 +4,11 @@ import TradeJournalEntry from '../models/TradeJournalEntry.js'
 import { calculateTradePerformance } from './tradeJournalService.js'
 
 export const CONFIRM_LINE_USER_ID = process.env.ORDER_CONFIRM_LINE_USER_ID || ''
+
+export const getConfirmLineUserIds = () => String(process.env.ORDER_CONFIRM_LINE_USER_ID || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean)
 const DEFAULT_BUY_AMOUNT = Number(process.env.ORDER_INTENT_BUY_AMOUNT_TWD) || 100_000
 const BROKER_ORDER_API_URL = process.env.BROKER_ORDER_API_URL || ''
 const BROKER_ORDER_DRY_RUN = process.env.BROKER_ORDER_DRY_RUN !== 'false'
@@ -163,14 +168,32 @@ export function buildOrderIntentLineMessage(intent) {
   }
 }
 
-export async function pushOrderIntentConfirmation(client, intent, userId = CONFIRM_LINE_USER_ID) {
-  if (!client || !userId) return null
-  try {
-    await client.pushMessage(userId, buildOrderIntentLineMessage(intent))
-    return { pushed: true, userId }
-  } catch (error) {
-    console.warn(`Unable to push order intent ${intent._id}:`, error.message)
-    return { pushed: false, userId, error: error.message }
+export async function pushOrderIntentConfirmation(client, intent, recipients = getConfirmLineUserIds()) {
+  const userIds = Array.isArray(recipients)
+    ? recipients.map((value) => String(value || '').trim()).filter(Boolean)
+    : String(recipients || '').split(',').map((value) => value.trim()).filter(Boolean)
+
+  if (!client || userIds.length === 0) {
+    console.warn(`Skip pushing order intent ${intent._id}: ORDER_CONFIRM_LINE_USER_ID is not configured`)
+    return { pushed: false, userIds: [], error: 'missing_order_confirm_line_user_id' }
+  }
+
+  const message = buildOrderIntentLineMessage(intent)
+  const results = []
+  for (const userId of userIds) {
+    try {
+      await client.pushMessage(userId, message)
+      results.push({ pushed: true, userId })
+    } catch (error) {
+      console.warn(`Unable to push order intent ${intent._id} to ${userId}:`, error.message)
+      results.push({ pushed: false, userId, error: error.message })
+    }
+  }
+
+  return {
+    pushed: results.some((result) => result.pushed),
+    userIds,
+    results,
   }
 }
 
