@@ -67,15 +67,18 @@ async function handleEvent(event, client) {
     }
     const tradeResult = await recordTradeMessage(event, client)
     if (tradeResult?.entries?.length > 0) {
-      let confirmationText = ''
-      if (tradeResult.intents?.length) {
-        confirmationText = tradeResult.pushSucceeded
-          ? `\n\n已建立 ${tradeResult.intents.length} 張跟單確認單，並推播給你確認。`
-          : `\n\n已建立 ${tradeResult.intents.length} 張跟單確認單，但推播失敗（請確認 ORDER_CONFIRM_LINE_USER_ID 設定是否正確）。`
-      }
+      const bubbles = tradeResult.entries.map(buildTradeRecordedFlexBubble)
+      const contents = bubbles.length === 1
+        ? bubbles[0]
+        : { type: 'carousel', contents: bubbles }
+      const firstEntry = tradeResult.entries[0]
+      const altText = tradeResult.entries.length === 1
+        ? `已記錄 ${firstEntry.name}(${firstEntry.code}) 交易`
+        : `已記錄 ${tradeResult.entries.length} 筆交易`
       return client.replyMessage(event.replyToken, {
-        type: 'text',
-        text: `${tradeResult.entries.map(buildTradeRecordedReply).join('\n\n')}${confirmationText}`,
+        type: 'flex',
+        altText,
+        contents,
       })
     }
     // return client.replyMessage(event.replyToken, { type: 'text', text: event.message.text })
@@ -125,19 +128,98 @@ async function handlePostbackEvent(event, client) {
   return Promise.resolve(null)
 }
 
-function buildTradeRecordedReply(entry) {
+function buildTradeRecordedFlexBubble(entry) {
   const tradeTypeLabels = {
     buy: '買進',
     sell_half: '賣一半',
     sell_all: '全賣',
   }
   const action = tradeTypeLabels[entry.tradeType] || entry.tradeType
+  const isBuy = entry.action === 'buy'
+  const accentColor = isBuy ? '#34C759' : '#FF3B30'
   const price = Number(entry.price)
   const priceText = Number.isFinite(price) && price > 0
-    ? `紀錄價格：${price.toLocaleString('zh-TW', { maximumFractionDigits: 2 })}`
-    : '紀錄價格：尚未取得'
+    ? `${price.toLocaleString('zh-TW', { maximumFractionDigits: 2 })} 元`
+    : '尚未取得'
+  const senderName = entry.senderName || 'Allen'
 
-  return `已記錄 Allen 交易\n${entry.name}(${entry.code}) ${action}\n${priceText}`
+  return {
+    type: 'bubble',
+    size: 'kilo',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: accentColor,
+      paddingAll: '10px',
+      contents: [
+        {
+          type: 'text',
+          text: '已記錄交易',
+          color: '#ffffff',
+          size: 'xs',
+          weight: 'bold',
+        },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      spacing: 'sm',
+      paddingAll: '14px',
+      contents: [
+        {
+          type: 'box',
+          layout: 'horizontal',
+          contents: [
+            {
+              type: 'text',
+              text: `${entry.name}`,
+              weight: 'bold',
+              size: 'lg',
+              flex: 1,
+            },
+            {
+              type: 'text',
+              text: entry.code,
+              size: 'sm',
+              color: '#888888',
+              align: 'end',
+              gravity: 'bottom',
+              flex: 0,
+            },
+          ],
+        },
+        {
+          type: 'text',
+          text: action,
+          size: 'md',
+          color: accentColor,
+          weight: 'bold',
+        },
+        {
+          type: 'separator',
+          margin: 'sm',
+        },
+        {
+          type: 'box',
+          layout: 'horizontal',
+          margin: 'sm',
+          contents: [
+            { type: 'text', text: '紀錄人', color: '#888888', size: 'sm', flex: 2 },
+            { type: 'text', text: senderName, size: 'sm', align: 'end', flex: 3 },
+          ],
+        },
+        {
+          type: 'box',
+          layout: 'horizontal',
+          contents: [
+            { type: 'text', text: '紀錄價格', color: '#888888', size: 'sm', flex: 2 },
+            { type: 'text', text: priceText, size: 'sm', align: 'end', flex: 3, weight: 'bold' },
+          ],
+        },
+      ],
+    },
+  }
 }
 
 async function recordTradeMessage(event, client) {

@@ -142,27 +142,115 @@ export function buildOrderIntentText(intent) {
 }
 
 export function buildOrderIntentLineMessage(intent) {
-  const text = buildOrderIntentText(intent)
-  return {
-    type: 'template',
-    altText: `${intent.name}(${intent.code}) 跟單確認單`,
-    template: {
-      type: 'buttons',
-      text: text.slice(0, 160),
-      actions: [
-        {
-          type: 'postback',
-          label: '確認跟單',
-          data: `action=confirm_order_intent&id=${intent._id}`,
-          displayText: `確認跟單 ${intent.code}`,
-        },
-        {
-          type: 'postback',
-          label: '拒絕',
-          data: `action=reject_order_intent&id=${intent._id}`,
-          displayText: `拒絕跟單 ${intent.code}`,
-        },
+  const side = actionLabels[intent.action] || intent.action
+  const tradeType = tradeTypeLabels[intent.tradeType] || intent.tradeType
+  const isBuy = intent.action === 'buy'
+  const accentColor = isBuy ? '#34C759' : '#FF3B30'
+
+  const price = Number(intent.referencePrice)
+  const priceText = Number.isFinite(price) && price > 0 ? `${round(price)} 元` : '尚無參考價'
+  const quantity = Number(intent.suggestedQuantity)
+  const quantityText = Number.isFinite(quantity) && quantity > 0 ? `${quantity.toLocaleString('zh-TW')} 股` : '待確認'
+  const amount = Number(intent.suggestedAmount)
+  const amountText = Number.isFinite(amount) && amount > 0 ? `約 ${amount.toLocaleString('zh-TW')} 元` : '依庫存計算'
+  const hasWarnings = intent.warnings?.length > 0
+
+  const row = (label, value, bold = false) => ({
+    type: 'box',
+    layout: 'horizontal',
+    contents: [
+      { type: 'text', text: label, color: '#888888', size: 'sm', flex: 3 },
+      { type: 'text', text: value, size: 'sm', align: 'end', flex: 4, weight: bold ? 'bold' : 'regular', wrap: true },
+    ],
+  })
+
+  const bodyContents = [
+    {
+      type: 'box',
+      layout: 'horizontal',
+      contents: [
+        { type: 'text', text: intent.name, weight: 'bold', size: 'lg', flex: 1 },
+        { type: 'text', text: intent.code, size: 'sm', color: '#888888', align: 'end', gravity: 'bottom', flex: 0 },
       ],
+    },
+    {
+      type: 'text',
+      text: `${tradeType} (${side})`,
+      size: 'md',
+      color: accentColor,
+      weight: 'bold',
+    },
+    { type: 'separator', margin: 'sm' },
+    row('委託方式', intent.isMarketOrder ? '市價' : '未指定'),
+    row('建議股數', quantityText, true),
+    row('建議金額', amountText),
+    row('參考價', priceText),
+  ]
+
+  if (hasWarnings) {
+    bodyContents.push({
+      type: 'box',
+      layout: 'horizontal',
+      margin: 'sm',
+      contents: [
+        { type: 'text', text: '⚠️ 風控', color: '#FF9500', size: 'sm', flex: 3 },
+        { type: 'text', text: intent.warnings.join(', '), size: 'sm', color: '#FF9500', align: 'end', flex: 4, wrap: true },
+      ],
+    })
+  }
+
+  return {
+    type: 'flex',
+    altText: `${intent.name}(${intent.code}) 跟單確認單`,
+    contents: {
+      type: 'bubble',
+      size: 'kilo',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: accentColor,
+        paddingAll: '10px',
+        contents: [
+          { type: 'text', text: '跟單確認單', color: '#ffffff', size: 'xs', weight: 'bold' },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        paddingAll: '14px',
+        contents: bodyContents,
+      },
+      footer: {
+        type: 'box',
+        layout: 'horizontal',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'button',
+            style: 'primary',
+            color: accentColor,
+            height: 'sm',
+            action: {
+              type: 'postback',
+              label: '確認跟單',
+              data: `action=confirm_order_intent&id=${intent._id}`,
+              displayText: `確認跟單 ${intent.code}`,
+            },
+          },
+          {
+            type: 'button',
+            style: 'secondary',
+            height: 'sm',
+            action: {
+              type: 'postback',
+              label: '拒絕',
+              data: `action=reject_order_intent&id=${intent._id}`,
+              displayText: `拒絕跟單 ${intent.code}`,
+            },
+          },
+        ],
+      },
     },
   }
 }
