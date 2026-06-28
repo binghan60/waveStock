@@ -82,4 +82,24 @@ router.post('/:id/reject', async (req, res) => {
   }
 })
 
+
+router.delete('/:id', async (req, res) => {
+  try {
+    const intent = await OrderIntent.findById(req.params.id)
+    if (!intent) {
+      return res.status(404).json({ error: 'order_intent_not_found' })
+    }
+
+    const deletableStatuses = new Set(['pending_confirm', 'rejected', 'failed', 'cancelled'])
+    if (!deletableStatuses.has(intent.status)) {
+      return res.status(409).json({ error: `order_intent_not_deletable:${intent.status}` })
+    }
+
+    await intent.deleteOne()
+    res.json({ deleted: true, id: req.params.id })
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ error: error.message })
+  }
+})
+
 export default router

@@ -89,4 +89,8 @@ export default {
     return apiClient.post(`/order-intents/${id}/reject`)
   },
 
+  deleteOrderIntent(id) {
+    return apiClient.delete(`/order-intents/${id}`)
+  },
+
 }
