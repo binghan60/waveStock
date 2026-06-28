@@ -145,8 +145,8 @@ export function buildOrderIntentLineMessage(intent) {
   const side = actionLabels[intent.action] || intent.action
   const tradeType = tradeTypeLabels[intent.tradeType] || intent.tradeType
   const isBuy = intent.action === 'buy'
-  const accentColor = isBuy ? '#5BA882' : '#B36B6B'
-  const headerBg = isBuy ? '#1A3328' : '#3D1A1A'
+  const accentColor = isBuy ? '#B36B6B' : '#5BA882'
+  const headerBg = isBuy ? '#3D1A1A' : '#1A3328'
 
   const price = Number(intent.referencePrice)
   const priceText = Number.isFinite(price) && price > 0 ? `${round(price)} 元` : '尚無參考價'

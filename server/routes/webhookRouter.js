@@ -136,8 +136,8 @@ function buildTradeRecordedFlexBubble(entry) {
   }
   const action = tradeTypeLabels[entry.tradeType] || entry.tradeType
   const isBuy = entry.action === 'buy'
-  const accentColor = isBuy ? '#5BA882' : '#B36B6B'
-  const headerBg = isBuy ? '#1A3328' : '#3D1A1A'
+  const accentColor = isBuy ? '#B36B6B' : '#5BA882'
+  const headerBg = isBuy ? '#3D1A1A' : '#1A3328'
   const price = Number(entry.price)
   const priceText = Number.isFinite(price) && price > 0
     ? `${price.toLocaleString('zh-TW', { maximumFractionDigits: 2 })} 元`
